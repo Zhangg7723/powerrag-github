@@ -45,7 +45,7 @@ def chunk(filename=None, binary=None, from_page=0, to_page=100000, lang="Chinese
     {"title_level": 3, "layout_recognize": "mineru", "chunk_token_num": 256, "enable_ocr": False, "delimiter": r'[.!?]+\s*',
     "enable_image_understanding": False, "enable_table": True, "enable_formula": False})
 
-    layout_recognize = parser_config.get("layout_recognize", "mineru")
+    tenant_id = kwargs.get("tenant_id", "default")
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     chunk_token_num = parser_config.get("chunk_token_num", 256)
     is_english = lang.lower() == "english"  # is_english(cks)
@@ -61,12 +61,10 @@ def chunk(filename=None, binary=None, from_page=0, to_page=100000, lang="Chinese
     
     # Handle PDF files directly
     if re.search(r"\.pdf$", filename, re.IGNORECASE):
-        tenant_id = kwargs.get("tenant_id", "default")
         pdf_parser = create_pdf_parser(filename, parser_config, tenant_id=tenant_id, lang=lang)
     
     # Handle Office files (Word, Excel, PowerPoint) - convert to PDF first
     elif re.search(r"\.(docx?|doc?|pptx?|ppt?)$", filename, re.IGNORECASE):
-        tenant_id = kwargs.get("tenant_id", "default")
         trace_id = kwargs.get('trace_id')
         pdf_binary, pdf_filename = convert_office_to_pdf(
             filename, binary=binary, callback=callback, trace_id=trace_id
@@ -77,7 +75,6 @@ def chunk(filename=None, binary=None, from_page=0, to_page=100000, lang="Chinese
     
     # Handle HTML files - convert to PDF first
     elif re.search(r"\.(html?|htm)$", filename, re.IGNORECASE):
-        tenant_id = kwargs.get("tenant_id", "default")
         trace_id = kwargs.get('trace_id')
         pdf_binary, pdf_filename = convert_html_to_pdf(
             filename, binary=binary, callback=callback, trace_id=trace_id
