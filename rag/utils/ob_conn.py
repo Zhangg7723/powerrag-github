@@ -31,10 +31,11 @@ from sqlalchemy.dialects.mysql import LONGTEXT, TEXT
 from sqlalchemy.sql.type_api import TypeEngine
 
 from api.utils.configs import get_base_config
-from rag import settings
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common.decorator import singleton
+from common.float_utils import get_float
+from common import settings
 from rag.nlp import rag_tokenizer
-from rag.settings import PAGERANK_FLD, TAG_FLD
-from rag.utils import singleton, get_float
 from rag.utils.doc_store_conn import DocStoreConnection, MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, \
     MatchDenseExpr
 
@@ -192,11 +193,9 @@ def get_default_value(column_name: str) -> Any:
 
 def get_value_str(value: Any) -> str:
     if isinstance(value, str):
-        cleaned_str = value.replace('\\', '\\\\')
-        cleaned_str = cleaned_str.replace('\n', '\\n')
-        cleaned_str = cleaned_str.replace('\r', '\\r')
-        cleaned_str = cleaned_str.replace('\t', '\\t')
-        return f"'{escape_string(cleaned_str)}'"
+        # escape_string already handles all necessary escaping for MySQL/OceanBase
+        # including backslashes, quotes, newlines, etc.
+        return f"'{escape_string(value)}'"
     elif isinstance(value, bool):
         return "true" if value else "false"
     elif value is None:
@@ -1288,19 +1287,9 @@ class OBConnection(DocStoreConnection):
                 elif k == "position_int":
                     d[k] = json.dumps([list(vv) for vv in v], ensure_ascii=False)
                 elif isinstance(v, list):
-                    # remove characters like '\t' for JSON dump and clean special characters
-                    cleaned_v = []
-                    for vv in v:
-                        if isinstance(vv, str):
-                            cleaned_str = vv.strip()
-                            cleaned_str = cleaned_str.replace('\\', '\\\\')
-                            cleaned_str = cleaned_str.replace('\n', '\\n')
-                            cleaned_str = cleaned_str.replace('\r', '\\r')
-                            cleaned_str = cleaned_str.replace('\t', '\\t')
-                            cleaned_v.append(cleaned_str)
-                        else:
-                            cleaned_v.append(vv)
-                    d[k] = json.dumps(cleaned_v, ensure_ascii=False)
+                    # json.dumps already handles all necessary escaping for JSON serialization
+                    # No need for manual escaping as it would cause double escaping
+                    d[k] = json.dumps(v, ensure_ascii=False)
                 else:
                     d[k] = v
 
@@ -1435,13 +1424,13 @@ class OBConnection(DocStoreConnection):
     Helper functions for search result
     """
 
-    def getTotal(self, res) -> int:
+    def get_total(self, res) -> int:
         return res.total
 
-    def getChunkIds(self, res) -> list[str]:
+    def get_chunk_ids(self, res) -> list[str]:
         return [row["id"] for row in res.chunks]
 
-    def getFields(self, res, fields: list[str]) -> dict[str, dict]:
+    def get_fields(self, res, fields: list[str]) -> dict[str, dict]:
         result = {}
         for row in res.chunks:
             data = {}
@@ -1511,7 +1500,7 @@ class OBConnection(DocStoreConnection):
                 last_pos = token_pos
         return re.sub(r'</em><em>', '', highlighted_txt)
 
-    def getHighlight(self, res, keywords: list[str], fieldnm: str):
+    def get_highlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}
         if len(res.chunks) == 0 or len(keywords) == 0:
             return ans
@@ -1527,7 +1516,7 @@ class OBConnection(DocStoreConnection):
                 ans[d["id"]] = highlighted_txt
         return ans
 
-    def getAggregation(self, res, fieldnm: str):
+    def get_aggregation(self, res, fieldnm: str):
         if len(res.chunks) == 0:
             return []
 

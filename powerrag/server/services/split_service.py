@@ -29,7 +29,7 @@ from markdown_it import MarkdownIt
 from markdown_it.tree import SyntaxTreeNode
 from numpy.f2py.auxfuncs import throw_error
 
-from api.db import ParserType
+from common.constants import ParserType
 from powerrag.utils.nlp_utils import num_tokens_from_string
 
 logger = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ class PowerRAGSplitService:
             else:
                 # Use config as-is for other parsers
                 chunks=[]
-                throw_error("Chunker not found")
+                raise ValueError(f"Chunker not found for parser_id: {parser_id}")
 
             # Ensure all chunks are strings and handle encoding
             processed_chunks = []
@@ -1005,6 +1005,13 @@ class ASTMarkdownChunker:
             elif node.type == "code_inline":
                 return f"`{node.content}`"
 
+        # Handle image nodes
+        if node.type == "image":
+            # Reconstruct markdown image syntax: ![alt](src)
+            alt = node.attrs.get('alt', '') if hasattr(node, 'attrs') and node.attrs else ''
+            src = node.attrs.get('src', '') if hasattr(node, 'attrs') and node.attrs else ''
+            return f"![{alt}]({src})"
+        
         # Handle nodes with children
         if hasattr(node, 'children') and node.children:
             content = "".join([self._render_node(child) for child in node.children])
