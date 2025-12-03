@@ -305,19 +305,26 @@ def regex_based_chunking(
         分块列表
     """
     if not txt.strip():
-        return []
+        return [txt]  # 即使为空，也返回包含原始内容的列表
 
     if parser_config is None:
         parser_config = {}
 
     chunk_token_num = parser_config.get("chunk_token_num", 256)
-    min_chunk_tokens = chunk_token_num // 3  # 统一使用 chunk_token_num / 3 作为最小切片大小
     regex_pattern = parser_config.get("regex_pattern", r'[.!?]+\s*')
     delimiter = parser_config.get("delimiter", "\n。.；;！!？？")
     
+    # 如果chunk_token_num=0，直接返回按regex分割的原始parts，不进行合并或切片
+    if chunk_token_num == 0:
+        parts = re.split(f'({regex_pattern})', txt)
+        parts = [part for part in parts if part.strip()]
+        return parts if parts else [txt]
+    
     # 验证参数合理性
-    if chunk_token_num <= 0:
-        raise ValueError("chunk_token_num 必须为正数")
+    if chunk_token_num < 0:
+        raise ValueError("chunk_token_num 必须为非负数")
+    
+    min_chunk_tokens = chunk_token_num // 3  # 统一使用 chunk_token_num / 3 作为最小切片大小
 
     # 使用正则表达式进行初步分割，保留分隔符
     # 注意：正则表达式应设计为捕获有意义的文本单元（如段落、句子等）
@@ -387,6 +394,10 @@ def regex_based_chunking(
         remaining_text = '\n'.join(current_chunk) if current_chunk else ''
         process_chunk(remaining_text)
 
+    # 如果没有生成任何chunks（可能因为所有parts都被过滤或处理失败），返回整个文档
+    if not chunks:
+        return [txt]
+    
     return chunks
 
 
@@ -414,9 +425,14 @@ def title_based_chunking(md_content: str, parser_config: Dict[str, Any] = None) 
     chunk_token_num = parser_config.get("chunk_token_num", 256)
     delimiter = parser_config.get("delimiter", "\n。；！？")
 
-    if not md_content or not isinstance(title_level, int) or title_level < 1 or title_level > 6:
-        return ([md_content] if md_content else [], [""] if md_content else [])
-
+    # 如果title_level无效，返回整个文档内容
+    if not isinstance(title_level, int) or title_level < 1 or title_level > 6:
+        return ([md_content] if md_content else [""], [""])
+    
+    # 如果内容为空，返回包含空字符串的列表
+    if not md_content:
+        return ([""], [""])
+    
     # Split content into lines while preserving original structure
     lines = md_content.split("\n")
     chunks = []
@@ -430,11 +446,9 @@ def title_based_chunking(md_content: str, parser_config: Dict[str, Any] = None) 
         # Must start at beginning of line (no whitespace)
         if stripped_line != stripped_line.lstrip():
             return False, ""
-
         # Must start with exact number of #s followed by space
         if not stripped_line.startswith("#" * level + " "):
             return False, ""
-
         # Extract title content (remove the # symbols and space)
         title_content = stripped_line[level + 1:].strip()
         return True, title_content
@@ -451,7 +465,6 @@ def title_based_chunking(md_content: str, parser_config: Dict[str, Any] = None) 
                     chunks.append(chunk_content)
                     titles.append(current_title)
                 current_chunk_lines = []
-
             # Start new chunk with the header and update current title
             current_chunk_lines = [line]
             current_title = title_content
@@ -468,10 +481,14 @@ def title_based_chunking(md_content: str, parser_config: Dict[str, Any] = None) 
 
     # If no chunks were created (no headers found), return entire content as one chunk
     if not chunks:
-        content = md_content.strip()
-        return ([content] if content else [], [""] if content else [])
+        # 即使没有找到标题，也返回整个文档内容
+        return ([md_content], [""])
 
     logging.info(f"Created {len(chunks)} chunks from document with {len(lines)} lines")
+
+    # 如果chunk_token_num=0，直接返回按title分割的原始chunks，不进行合并或切片
+    if chunk_token_num == 0:
+        return chunks, titles
 
     return split_with_title_chunks(chunks, chunk_token_num, delimiter, title_level), titles
 
@@ -490,6 +507,10 @@ def split_with_title_chunks(sections, chunk_token_num=512, delimiter="\n。；�
         return []
     if isinstance(sections[0], type("")):
         sections = [(s, "") for s in sections]
+    
+    # 如果chunk_token_num=0，直接返回原始sections，不进行合并或切片
+    if chunk_token_num == 0:
+        return sections
 
     def split_chunk_by_delimiter_with_title(text, target_size, original_title):
         """
