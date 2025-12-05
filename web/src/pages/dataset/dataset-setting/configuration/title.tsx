@@ -38,7 +38,7 @@ function TitleLevelFormField() {
           </FormLabel>
           <Select
             onValueChange={(value) => field.onChange(Number(value))}
-            value={field.value ? String(field.value) : undefined}
+            value={field.value != null ? String(field.value) : ''}
           >
             <FormControl>
               <SelectTrigger>

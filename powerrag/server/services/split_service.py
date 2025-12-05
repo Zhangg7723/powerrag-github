@@ -373,7 +373,7 @@ def regex_based_chunking(
     # 主循环：按顺序处理每个part
     for part in parts:
         # 计算添加part后的chunk大小
-        current_chunk_text = '\n'.join(current_chunk) if current_chunk else ''
+        current_chunk_text = ''.join(current_chunk) if current_chunk else ''
         if current_chunk_text:
             new_chunk_text = current_chunk_text + part
             new_tokens = num_tokens_from_string(new_chunk_text)
@@ -391,7 +391,7 @@ def regex_based_chunking(
     
     # 处理剩余的chunk
     if current_chunk:
-        remaining_text = '\n'.join(current_chunk) if current_chunk else ''
+        remaining_text = ''.join(current_chunk) if current_chunk else ''
         process_chunk(remaining_text)
 
     # 如果没有生成任何chunks（可能因为所有parts都被过滤或处理失败），返回整个文档
@@ -623,24 +623,6 @@ def split_with_title_chunks(sections, chunk_token_num=512, delimiter="\n。；�
             result_chunks.extend(split_chunks)
         else:
             result_chunks.append((section, extracted_title))
-
-
-    # Step 2: Split large chunks after merging
-    # result_chunks = []
-    
-    # for section, title in merged_sections:
-    #     section_tokens = num_tokens_from_string(section)
-        
-    #     # Extract title from markdown section if no title provided
-    #     extracted_title = title if title else extract_title_from_markdown(section, title_level)
-
-    #     # If section is too large, split it and preserve the original title
-    #     if section_tokens > chunk_token_num * 2:
-    #         split_chunks = split_chunk_by_delimiter_with_title(section, chunk_token_num, extracted_title)
-    #         result_chunks.extend(split_chunks)
-    #     else:
-    #         # For small chunks, keep them as-is
-    #         result_chunks.append((section, extracted_title))
 
     return result_chunks
 
