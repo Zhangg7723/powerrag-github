@@ -305,7 +305,7 @@ def regex_based_chunking(
         分块列表
     """
     if not txt.strip():
-        return [txt]  # 即使为空，也返回包含原始内容的列表
+        return []  # 即使为空，也返回包含原始内容的列表
 
     if parser_config is None:
         parser_config = {}
@@ -375,10 +375,8 @@ def regex_based_chunking(
         # 计算添加part后的chunk大小
         current_chunk_text = ''.join(current_chunk) if current_chunk else ''
         if current_chunk_text:
-            new_chunk_text = current_chunk_text + part
-            new_tokens = num_tokens_from_string(new_chunk_text)
+            new_tokens = num_tokens_from_string(current_chunk_text + part)
         else:
-            new_chunk_text = part
             new_tokens = num_tokens_from_string(part)
         
         # 如果添加part后不超过目标大小，继续累积
@@ -490,7 +488,7 @@ def title_based_chunking(md_content: str, parser_config: Dict[str, Any] = None) 
     if chunk_token_num == 0:
         return chunks, titles
 
-    return split_with_title_chunks(chunks, chunk_token_num, delimiter, title_level), titles
+    return [content for content, _ in split_with_title_chunks(chunks, chunk_token_num, delimiter, title_level)], titles
 
 
 def split_with_title_chunks(sections, chunk_token_num=512, delimiter="\n。；！？", title_level=3):
@@ -615,6 +613,7 @@ def split_with_title_chunks(sections, chunk_token_num=512, delimiter="\n。；�
                     result_chunks[-1] = (merged_content, merged_title)
                 else:
                     result_chunks.append((section, extracted_title))
+                    continue
             else:
                 # Cannot merge due to title level, add as new chunk
                 result_chunks.append((section, extracted_title))
