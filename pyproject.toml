@@ -140,6 +140,7 @@ dependencies = [
     "markdownify>=1.2.0",
     "captcha>=0.7.1",
     "pyobvector==0.2.18",
+    "mineru-vl-utils==0.1.17"
 ]
 
 [project.optional-dependencies]

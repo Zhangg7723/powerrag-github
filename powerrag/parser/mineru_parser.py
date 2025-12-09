@@ -27,12 +27,17 @@ import tempfile
 from pathlib import Path
 from io import BytesIO
 import pdfplumber
-from typing import Union, Dict, TypedDict, Tuple, Optional
+from typing import Union, Dict, TypedDict, Tuple, List
 from api.utils.configs import get_base_config
 from rag.utils.storage_factory import STORAGE_IMPL
 from PIL import Image
 import io
 import numpy as np
+from .vllm_parser import VllmParser
+from powerrag.utils.file_utils import bytes_md5
+from .vlm_intermediate_model import PageInfo, IntermediateJSON
+from .mineru_converter import MinerUResultConverter
+from mineru_vl_utils import MinerUClient
 
 LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
 if LOCK_KEY_pdfplumber not in sys.modules:
@@ -80,7 +85,38 @@ class MinerUPdfParser:
             logging.debug(f"[MinerU CLI] Not available: {e}")
             return False
 
-    def _parse_with_cli(self, pdf_path: Path, from_page: int, to_page: int) -> Tuple[int, Union[Dict, str]]:
+    def _check_mineru_client_available(self) -> bool:
+        
+        # Check vllm_server configuration with model_type="mineru"
+        vllm_server_config = get_base_config("vllm_server", {}) or {}
+        model_type = vllm_server_config.get("model_type", "")
+        server_url = vllm_server_config.get("url", "")
+        
+        # Check if model_type is "mineru" and url is configured
+        if model_type == "mineru" and server_url:
+            return True
+        
+        return False
+
+    def _pdf_to_images(self, pdf_data: bytes, from_page: int = 0, to_page: int = 100000) -> List[Image.Image]:
+        """
+        Convert PDF pages to images for processing
+        
+        Reuses VllmParser's implementation to avoid code duplication.
+        
+        Args:
+            pdf_data: PDF file data as bytes
+            from_page: Starting page (0-indexed)
+            to_page: Ending page (0-indexed, exclusive)
+            
+        Returns:
+            List of PIL Image objects
+        """
+        # Create a temporary VllmParser instance to reuse its _pdf_to_images method
+        temp_parser = VllmParser(filename="temp")
+        return temp_parser._pdf_to_images(pdf_data, from_page, to_page)
+
+    def _parse_with_cmd(self, pdf_path: Path, from_page: int, to_page: int) -> Tuple[int, Union[Dict, str]]:
         """
         Parse PDF using mineru CLI (fallback method)
         
@@ -220,9 +256,9 @@ class MinerUPdfParser:
     def parse_document(self, filename, binary=None, from_page: int = 0, to_page: int = 100000) -> Tuple[int, Union[Dict, str]]:
         """
         Parse document using MinerU with intelligent fallback:
-        1. Try API service first (if configured)
-        2. Fall back to CLI (if installed)
-        3. Return error if neither available
+        1. Try API service (if configured)
+        2. Try MinerUClient with vllm interface (if available and configured)
+        3. Return error if none available
 
         Args:
             filename: Name of the document file
@@ -236,41 +272,7 @@ class MinerUPdfParser:
                 - Response content (Dict on success, error message string on failure)
         """
         
-        # Strategy 1: use CLI
-        if self._check_cli_installation():
-            logging.info("[MinerU] Using CLI method")
-            temp_pdf_path = None
-            try:
-                # Prepare PDF file for CLI
-                if binary is not None:
-                    # Save binary to temporary file
-                    temp_dir = Path(tempfile.mkdtemp(prefix="mineru_input_"))
-                    temp_pdf_path = temp_dir / Path(filename).name
-                    with open(temp_pdf_path, "wb") as f:
-                        f.write(binary)
-                    pdf_path = temp_pdf_path
-                elif os.path.isfile(filename):
-                    pdf_path = Path(filename)
-                else:
-                    return 400, f"Unable to process document: {filename}"
-                
-                # Parse with CLI
-                status, result = self._parse_with_cli(pdf_path, from_page, to_page)
-                
-                # Clean up temporary file
-                if temp_pdf_path and temp_pdf_path.exists():
-                    try:
-                        temp_pdf_path.unlink()
-                        temp_pdf_path.parent.rmdir()
-                    except Exception as e:
-                        logging.warning(f"[MinerU CLI] Failed to clean up temp file: {e}")
-                
-                return status, result
-            except Exception as e:
-                logging.error(f"[MinerU] CLI method failed: {e}")
-                # return 500, f"MinerU CLI parsing failed: {str(e)}"
-
-    # Strategy 2: Try API service first
+        # Strategy 1: Try API service first
         mineru_config = get_base_config("mineru", {}) or {}
 
         try:
@@ -279,91 +281,272 @@ class MinerUPdfParser:
         except Exception as e:
             logging.warning(f"[MinerU] API service failed: {e}")
 
+        # Strategy 2: Try MinerUClient with vllm interface
+        if self._check_mineru_client_available():
+            try:
+                logging.info("[MinerU] Attempting to use MinerUClient with vllm interface")
+                return self._parse_with_mineru_client(filename, binary, from_page, to_page, mineru_config)
+            except Exception as e:
+                logging.warning(f"[MinerU] MinerUClient method failed: {e}")
 
         # Strategy 3: No method available
         error_msg = (
             "MinerU is not available. Please either:\n"
             "1. Configure MinerU API service in conf/service_conf.yaml under 'mineru.hosts', or\n"
-            "2. Install MinerU CLI: pip install -U 'mineru[core]'"
+            "2. Install MinerUClient: pip install mineru-vl-utils and configure 'vllm_server.url' and 'vllm_server.model_type=mineru'"
         )
         logging.error(f"[MinerU] {error_msg}")
         return 503, error_msg
 
-    def _parse_with_api(self, filename, binary, from_page: int, to_page: int, mineru_config: dict) -> Tuple[int, Union[Dict, str]]:
+    def _parse_with_mineru_client(self, filename, binary, from_page: int, to_page: int, mineru_config: dict) -> Tuple[int, Union[Dict, str]]:
         """
-        Parse document using MinerU API service
+        Parse document using MinerUClient with vllm interface
         
         Args:
             filename: Document filename
             binary: Binary content of the file
             from_page: Starting page number
             to_page: Ending page number
-            host: API service host URL
-            mineru_config: Configuration dictionary
+            mineru_config: Configuration dictionary (not used, kept for compatibility)
             
         Returns:
             Tuple of (status_code, result)
         """
-        backend = mineru_config.get("backend", "pipeline")
-        server_url = mineru_config.get("server_url")
-        host = mineru_config.get("hosts")
         
-        if backend == "vlm-http-client" and not server_url:
-            raise ValueError("MinerU server_url configuration is missing when backend is vlm-http-client")
-
-        # Prepare API endpoint
-        api_url = f"{host}/file_parse"
-
-        # Check if service is available
-        try:
-            response = requests.get(f"{host}/docs", timeout=5)
-            if response.status_code != 200:
-                raise ConnectionError(f"MinerU service returned status {response.status_code}")
-        except Exception as e:
-            raise ConnectionError(f"Failed to connect to MinerU service: {str(e)}")
+        # Read vllm_server configuration
+        vllm_server_config = get_base_config("vllm_server", {}) or {}
+        model_type = vllm_server_config.get("model_type", "")
+        server_url = vllm_server_config.get("url", "")
         
-        # Prepare multipart form data
-        files = {}
-        data = {
-            "return_middle_json": "false",
-            "return_model_output": "false",
-            "return_md": "true",
-            "return_images": "true",
-            "end_page_id": str(to_page if to_page != -1 else 99999),
-            "parse_method": self.parse_method,
-            "start_page_id": str(from_page),
-            "lang_list": self.lang_list,
-            "output_dir": "./output",
-            "return_content_list": "false",
-            "backend": backend,
-            "server_url": server_url,
-            "table_enable": str(self.table_enable).lower(),
-            "formula_enable": str(self.formula_enable).lower(),
-        }
-
-        # Handle file upload
+        # Verify model_type is "mineru"
+        if model_type != "mineru":
+            raise ValueError(f"MinerUClient requires vllm_server.model_type='mineru', but got '{model_type}'")
+        
+        if not server_url:
+            raise ValueError("MinerU server_url configuration is missing. Please configure 'vllm_server.url' in config")
+        
+        # Prepare input data
         if binary is not None:
-            files["files"] = (filename, binary, "application/pdf")
+            input_data = binary
         elif os.path.isfile(filename):
             with open(filename, "rb") as f:
-                files["files"] = (filename, f.read(), "application/pdf")
+                input_data = f.read()
         else:
             raise ValueError(f"Unable to process document: {filename}")
-
-        # Make API request
-        headers = {"accept": "application/json"}
-        response = requests.post(api_url, files=files, data=data, headers=headers, timeout=300)
-
-        # Handle response
-        if response.status_code == 200:
+        
+        # Convert PDF to images
+        images = self._pdf_to_images(input_data, from_page, to_page)
+        
+        if not images:
+            return 400, "No pages to parse"
+        
+        # Create MinerUClient instance
+        client = MinerUClient(
+            backend="http-client",
+            server_url=server_url
+        )
+        
+        # Perform batch extraction
+        try:
+            extraction_results = client.batch_two_step_extract(images=images)
+        except Exception as e:
+            logging.error(f"[MinerU Client] Extraction failed: {str(e)}")
+            raise
+        
+        # Convert results to markdown format
+        all_md_content = []
+        all_images = {}
+        
+        for page_index, extraction_result in enumerate(extraction_results):
             try:
-                result = response.json()
-                logging.info("[MinerU API] Successfully parsed document")
-                return response.status_code, result
-            except json.JSONDecodeError:
-                raise ValueError("Invalid JSON response from API")
-        else:
-            raise ValueError(f"API request failed with status {response.status_code}: {response.text}")
+                # Get content blocks (prefer content from stage 2, fallback to layout from stage 1)
+                content_blocks = extraction_result.get("content", [])
+                if not content_blocks:
+                    content_blocks = extraction_result.get("layout", [])
+                
+                # Convert to markdown
+                page_md_content = self._convert_blocks_to_markdown(
+                    images[page_index] if page_index < len(images) else None,
+                    content_blocks,
+                    page_index,
+                    all_images
+                )
+                all_md_content.append(page_md_content)
+                
+            except Exception as e:
+                logging.error(f"[MinerU Client] Failed to process page {page_index}: {str(e)}")
+                continue
+        
+        # Combine all markdown content
+        md_content = "\n\n".join(all_md_content)
+        
+        # Format result to match API response structure
+        pdf_stem = Path(filename).stem if filename else "document"
+        result = {
+            "results": {
+                pdf_stem: {
+                    "md_content": md_content,
+                    "images": all_images
+                }
+            }
+        }
+        
+        logging.info(f"[MinerU Client] Successfully parsed document with {len(images)} pages")
+        return 200, result
+
+def result_to_middle_json(model_output_blocks_list, images_list, pdf_doc, image_writer):
+    mineru_version = "2.5.0"
+    middle_json = {"pdf_info": [], "_backend":"vlm", "_version_name": mineru_version}
+    for index, page_blocks in enumerate(model_output_blocks_list):
+        page = pdf_doc[index]
+        image_dict = images_list[index]
+        page_info = blocks_to_page_info(page_blocks, image_dict, page, image_writer, index)
+        middle_json["pdf_info"].append(page_info)
+
+    # """表格跨页合并"""
+    # table_enable = get_table_enable(os.getenv('MINERU_VLM_TABLE_ENABLE', 'True').lower() == 'true')
+    # if table_enable:
+    #     merge_table(middle_json["pdf_info"])
+
+    # """llm优化标题分级"""
+    # if heading_level_import_success:
+    #     llm_aided_title_start_time = time.time()
+    #     llm_aided_title(middle_json["pdf_info"], title_aided_config)
+    #     logger.info(f'llm aided title time: {round(time.time() - llm_aided_title_start_time, 2)}')
+
+    # 关闭pdf文档
+    pdf_doc.close()
+    return middle_json
+
+def blocks_to_page_info(page_blocks, image_dict, page, image_writer, page_index) -> dict:
+    """
+    将blocks转换为页面信息（使用中间结构）
+    
+    此方法现在使用统一的中间结构（PageInfo），不同模型的解析器需要重写此方法
+    或使用对应的转换器（如MinerUResultConverter）来转换模型输出。
+    
+    Args:
+        page_blocks: 模型输出的原始blocks（格式因模型而异）
+        image_dict: 图像字典，包含 {"scale": ..., "img_pil": ...}
+        page: PDF页面对象
+        image_writer: 图像写入器
+        page_index: 页面索引
+        
+    Returns:
+        dict: 页面信息字典，格式为 {"para_blocks": [...], "discarded_blocks": [...], "page_size": [...], "page_idx": ...}
+    """
+    scale = image_dict.get("scale", 1.0)
+    page_pil_img = image_dict["img_pil"]
+    page_img_md5 = bytes_md5(page_pil_img.tobytes())
+    width, height = map(int, page.get_size())
+    
+    # 将page_blocks转换为中间结构
+    # 注意：这里假设page_blocks已经是dict格式，如果不是需要先转换
+    converter = MinerUResultConverter()
+    if isinstance(page_blocks, list):
+        # 如果page_blocks是列表，需要构造一个dict
+        model_output = {
+            "para_blocks": page_blocks,
+            "discarded_blocks": [],
+            "page_size": [width, height],
+            "page_idx": page_index
+        }
+    else:
+        model_output = page_blocks
+        if "page_size" not in model_output:
+            model_output["page_size"] = [width, height]
+        if "page_idx" not in model_output:
+            model_output["page_idx"] = page_index
+    
+    # 转换为中间结构
+    page_info_obj = converter.convert_to_intermediate(
+        model_output=model_output,
+        page_index=page_index,
+        page_size=[width, height],
+        page_image=page_pil_img,
+        image_writer=image_writer,
+        scale=scale
+    )
+    
+    # 转换为dict格式（保持向后兼容，使用旧格式）
+    return page_info_obj.to_dict(legacy_format=True)
+
+
+def _parse_with_api(self, filename, binary, from_page: int, to_page: int, mineru_config: dict) -> Tuple[int, Union[Dict, str]]:
+    """
+    Parse document using MinerU API service
+    
+    Args:
+        filename: Document filename
+        binary: Binary content of the file
+        from_page: Starting page number
+        to_page: Ending page number
+        host: API service host URL
+        mineru_config: Configuration dictionary
+        
+    Returns:
+        Tuple of (status_code, result)
+    """
+    backend = mineru_config.get("backend", "pipeline")
+    server_url = mineru_config.get("server_url")
+    host = mineru_config.get("hosts")
+    
+    if backend == "vlm-http-client" and not server_url:
+        raise ValueError("MinerU server_url configuration is missing when backend is vlm-http-client")
+
+    # Prepare API endpoint
+    api_url = f"{host}/file_parse"
+
+    # Check if service is available
+    try:
+        response = requests.get(f"{host}/docs", timeout=5)
+        if response.status_code != 200:
+            raise ConnectionError(f"MinerU service returned status {response.status_code}")
+    except Exception as e:
+        raise ConnectionError(f"Failed to connect to MinerU service: {str(e)}")
+    
+    # Prepare multipart form data
+    files = {}
+    data = {
+        "return_middle_json": "false",
+        "return_model_output": "false",
+        "return_md": "true",
+        "return_images": "true",
+        "end_page_id": str(to_page if to_page != -1 else 99999),
+        "parse_method": self.parse_method,
+        "start_page_id": str(from_page),
+        "lang_list": self.lang_list,
+        "output_dir": "./output",
+        "return_content_list": "false",
+        "backend": backend,
+        "server_url": server_url,
+        "table_enable": str(self.table_enable).lower(),
+        "formula_enable": str(self.formula_enable).lower(),
+    }
+
+    # Handle file upload
+    if binary is not None:
+        files["files"] = (filename, binary, "application/pdf")
+    elif os.path.isfile(filename):
+        with open(filename, "rb") as f:
+            files["files"] = (filename, f.read(), "application/pdf")
+    else:
+        raise ValueError(f"Unable to process document: {filename}")
+
+    # Make API request
+    headers = {"accept": "application/json"}
+    response = requests.post(api_url, files=files, data=data, headers=headers, timeout=300)
+
+    # Handle response
+    if response.status_code == 200:
+        try:
+            result = response.json()
+            logging.info("[MinerU API] Successfully parsed document")
+            return response.status_code, result
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON response from API")
+    else:
+        raise ValueError(f"API request failed with status {response.status_code}: {response.text}")
 
     def store_images(self, md_content: str, images: ImageDict, output_dir: str) -> str:
         """

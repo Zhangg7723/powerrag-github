@@ -36,6 +36,12 @@ oceanbase:
   scheme: 'mysql' # set 'mysql' to create connection using mysql config
   config:
     db_name: 'test'
+
+vllm_server:
+  url:
+  model_name:
+  model_type:
+  api_key:
 # gotenberg:
 #   url: 'http://localhost:3000'
 #   timeout: 60

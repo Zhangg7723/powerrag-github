@@ -399,3 +399,8 @@ def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes
         return out
 
     return out
+
+def bytes_md5(file_bytes):
+    hasher = hashlib.md5()
+    hasher.update(file_bytes)
+    return hasher.hexdigest().upper()

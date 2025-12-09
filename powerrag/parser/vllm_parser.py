@@ -23,16 +23,12 @@ import sys
 from io import BytesIO
 import pdfplumber
 from typing import Union, Dict, TypedDict, Tuple, List, Optional
+from dataclasses import dataclass
 from api.utils.configs import get_base_config
 from rag.utils.storage_factory import STORAGE_IMPL
 from openai import OpenAI
 from PIL import Image
 import io
-
-
-# Constants for image processing
-MIN_PIXELS = 3136
-MAX_PIXELS = 11289600
 
 
 # Default prompt for layout recognition
@@ -54,6 +50,44 @@ DEFAULT_LAYOUT_PROMPT = """Please output the layout information from the PDF ima
 
 5. Final Output: The entire output must be a single JSON object.
 """
+
+
+@dataclass
+class SamplingParams:
+    """Sampling parameters for vLLM inference"""
+    
+    temperature: float | None = None
+    top_p: float | None = None
+    top_k: int | None = None
+    presence_penalty: float | None = None  # not supported by hf
+    frequency_penalty: float | None = None  # not supported by hf
+    repetition_penalty: float | None = None
+    no_repeat_ngram_size: int | None = None
+    max_new_tokens: int | None = None
+    
+    def to_openai_params(self) -> Dict:
+        """
+        Convert to OpenAI API compatible parameters.
+        
+        Returns:
+            Dictionary of parameters for OpenAI API
+        """
+        params = {}
+        
+        if self.temperature is not None:
+            params["temperature"] = self.temperature
+        if self.top_p is not None:
+            params["top_p"] = self.top_p
+        if self.top_k is not None:
+            params["top_k"] = self.top_k
+        if self.presence_penalty is not None:
+            params["presence_penalty"] = self.presence_penalty
+        if self.frequency_penalty is not None:
+            params["frequency_penalty"] = self.frequency_penalty
+        if self.max_new_tokens is not None:
+            params["max_completion_tokens"] = self.max_new_tokens
+        
+        return params
 
 
 class ImageDict(TypedDict):
@@ -85,7 +119,8 @@ class VllmParser:
         vllm_url: Optional[str] = None,
         config_key: str = "vllm",
         prompt: str = DEFAULT_LAYOUT_PROMPT,
-        enable_ocr: bool = False
+        enable_ocr: bool = False,
+        sampling_params: Optional[SamplingParams] = None
     ):
         self.lang_list = ["ch"]
         self.filename = filename
@@ -96,6 +131,16 @@ class VllmParser:
         
         # Set vllm_url if provided, otherwise will be read from config in __call__
         self.vllm_url = vllm_url
+        
+        # Set sampling parameters (default values for backward compatibility)
+        if sampling_params is None:
+            self.sampling_params = SamplingParams(
+                temperature=0.1,
+                top_p=0.9,
+                max_new_tokens=32768
+            )
+        else:
+            self.sampling_params = sampling_params
 
     def __call__(self, binary=None, from_page=0, to_page=100000, callback=None, kb_id: str = "default"):
         if callback:
@@ -203,13 +248,7 @@ class VllmParser:
                 try:
                     # Run vLLM inference
                     response_text = self._inference_with_vllm(image_pil, vllm_url=vllm_url)
-                    cells, filtered = self.post_process_output(
-                        response_text,
-                        image_pil,
-                        image_pil,
-                        min_pixels=MIN_PIXELS,
-                        max_pixels=MAX_PIXELS,
-                    )
+                    cells, filtered = self.post_process_output(response_text)
                     if not filtered:
                         # Pass output_dir and page_index to layoutjson2md for image storage
                         page_md_content = self.layoutjson2md(
@@ -248,81 +287,42 @@ class VllmParser:
             logging.error(f"[vLLM] Unexpected error: {e}")
             return 500, f"vLLM parsing failed: {str(e)}"
 
-    def post_process_output(self, response, origin_image, input_image, min_pixels=None, max_pixels=None):
+    def post_process_output(self, response):
+        """
+        Post-process vLLM model output.
+        
+        Since images are not resized before sending to vLLM, no coordinate conversion is needed.
+        This method only handles JSON parsing and fallback processing.
+        
+        Args:
+            response: Raw response text from vLLM model
+            
+        Returns:
+            Tuple of (processed_cells, filtered) where:
+            - processed_cells: Parsed cells list or cleaned text
+            - filtered: True if JSON parsing failed and fallback was used, False otherwise
+        """
         json_load_failed = False
         cells = response
         try:
+            # Try to parse JSON directly
             cells = json.loads(cells)
-            cells = self.post_process_cells(
-                origin_image,
-                cells,
-                input_image.width,
-                input_image.height,
-                min_pixels=min_pixels,
-                max_pixels=max_pixels
-            )
+            # Validate that cells is a list
+            if not isinstance(cells, list):
+                raise ValueError(f"Expected list, got {type(cells)}")
+            # No coordinate conversion needed since image is not resized
             return cells, False
         except Exception as e:
             logging.warning(f"cells post process error: {e}")
             json_load_failed = True
 
         if json_load_failed:
+            # Fallback: try to extract JSON from text or return cleaned text
             cleaner = OutputCleaner()
             response_clean = cleaner.clean_model_output(cells)
             if isinstance(response_clean, list):
                 response_clean = "\n\n".join([cell['text'] for cell in response_clean if 'text' in cell])
             return response_clean, True
-
-    def post_process_cells(
-            self,
-            origin_image: Image.Image,
-            cells: List[Dict],
-            input_width,  # server input width, also has smart_resize in server
-            input_height,
-            factor: int = 28,
-            min_pixels: int = 3136,
-            max_pixels: int = 11289600
-    ) -> List[Dict]:
-        """
-        Post-processes cell bounding boxes, converting coordinates from the resized dimensions back to the original dimensions.
-
-        Args:
-            origin_image: The original PIL Image.
-            cells: A list of cells containing bounding box information.
-            input_width: The width of the input image sent to the server.
-            input_height: The height of the input image sent to the server.
-            factor: Resizing factor.
-            min_pixels: Minimum number of pixels.
-            max_pixels: Maximum number of pixels.
-
-        Returns:
-            A list of post-processed cells.
-        """
-        assert isinstance(cells, list) and len(cells) > 0 and isinstance(cells[0], dict)
-        min_pixels = min_pixels or MIN_PIXELS
-        max_pixels = max_pixels or MAX_PIXELS
-        original_width, original_height = origin_image.size
-
-        input_height, input_width = smart_resize(input_height, input_width, min_pixels=min_pixels,
-                                                 max_pixels=max_pixels)
-
-        scale_x = input_width / original_width
-        scale_y = input_height / original_height
-
-        cells_out = []
-        for cell in cells:
-            bbox = cell['bbox']
-            bbox_resized = [
-                int(float(bbox[0]) / scale_x),
-                int(float(bbox[1]) / scale_y),
-                int(float(bbox[2]) / scale_x),
-                int(float(bbox[3]) / scale_y)
-            ]
-            cell_copy = cell.copy()
-            cell_copy['bbox'] = bbox_resized
-            cells_out.append(cell_copy)
-
-        return cells_out
 
     def _inference_with_vllm(self, image, vllm_url):
         """
@@ -356,12 +356,17 @@ class VllmParser:
                 }
             )
             
-            response = client.chat.completions.create(
-                messages=messages, 
-                model=self.model_name,  # Use the model name from initialization
-                max_completion_tokens=32768,
-                temperature=0.1,
-                top_p=0.9)
+            # Get sampling parameters
+            sampling_kwargs = self.sampling_params.to_openai_params()
+            
+            # Ensure model name is included
+            create_kwargs = {
+                "messages": messages,
+                "model": self.model_name,
+                **sampling_kwargs
+            }
+            
+            response = client.chat.completions.create(**create_kwargs)
             response_text = response.choices[0].message.content
             return response_text
             
@@ -855,33 +860,6 @@ class VllmParser:
             return 0
 
 
-def smart_resize(height: int, width: int, min_pixels: int = MIN_PIXELS, max_pixels: int = MAX_PIXELS) -> Tuple[int, int]:
-    """
-    Resize image dimensions while maintaining aspect ratio and respecting pixel limits.
-    
-    Args:
-        height: Original height
-        width: Original width
-        min_pixels: Minimum total pixels
-        max_pixels: Maximum total pixels
-        
-    Returns:
-        Tuple of (new_height, new_width)
-    """
-    total_pixels = height * width
-    
-    if total_pixels < min_pixels:
-        scale = (min_pixels / total_pixels) ** 0.5
-        height = int(height * scale)
-        width = int(width * scale)
-    elif total_pixels > max_pixels:
-        scale = (max_pixels / total_pixels) ** 0.5
-        height = int(height * scale)
-        width = int(width * scale)
-    
-    return height, width
-
-
 class OutputCleaner:
     """Simple output cleaner for fallback processing"""
     
@@ -897,8 +875,4 @@ class OutputCleaner:
             except:
                 pass
         return output
-
-
-# Backward compatibility: DotsOcrParser as an alias
-DotsOcrParser = VllmParser
 
