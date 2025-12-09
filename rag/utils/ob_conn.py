@@ -192,11 +192,7 @@ def get_default_value(column_name: str) -> Any:
 
 def get_value_str(value: Any) -> str:
     if isinstance(value, str):
-        cleaned_str = value.replace('\\', '\\\\')
-        cleaned_str = cleaned_str.replace('\n', '\\n')
-        cleaned_str = cleaned_str.replace('\r', '\\r')
-        cleaned_str = cleaned_str.replace('\t', '\\t')
-        return f"'{escape_string(cleaned_str)}'"
+        return f"'{escape_string(value)}'"
     elif isinstance(value, bool):
         return "true" if value else "false"
     elif value is None:
@@ -1288,19 +1284,7 @@ class OBConnection(DocStoreConnection):
                 elif k == "position_int":
                     d[k] = json.dumps([list(vv) for vv in v], ensure_ascii=False)
                 elif isinstance(v, list):
-                    # remove characters like '\t' for JSON dump and clean special characters
-                    cleaned_v = []
-                    for vv in v:
-                        if isinstance(vv, str):
-                            cleaned_str = vv.strip()
-                            cleaned_str = cleaned_str.replace('\\', '\\\\')
-                            cleaned_str = cleaned_str.replace('\n', '\\n')
-                            cleaned_str = cleaned_str.replace('\r', '\\r')
-                            cleaned_str = cleaned_str.replace('\t', '\\t')
-                            cleaned_v.append(cleaned_str)
-                        else:
-                            cleaned_v.append(vv)
-                    d[k] = json.dumps(cleaned_v, ensure_ascii=False)
+                    d[k] = json.dumps(v, ensure_ascii=False)
                 else:
                     d[k] = v
 
