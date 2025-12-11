@@ -425,11 +425,11 @@ def title_based_chunking(md_content: str, parser_config: Dict[str, Any] = None) 
 
     # 如果title_level无效，返回整个文档内容
     if not isinstance(title_level, int) or title_level < 1 or title_level > 6:
-        return ([md_content] if md_content else [""], [""])
+        return ([], [])
     
-    # 如果内容为空，返回包含空字符串的列表
+    # 如果内容为空，返回空列表
     if not md_content:
-        return ([""], [""])
+        return ([], [])
     
     # Split content into lines while preserving original structure
     lines = md_content.split("\n")
