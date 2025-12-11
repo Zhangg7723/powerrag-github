@@ -300,6 +300,7 @@ def regex_based_chunking(
             - chunk_token_num: 目标分块大小（tokens）
             - regex_pattern: 自定义正则表达式，用于初步分割文本单元
             - delimiter: 用于拆分过大切片的分隔符字符串
+        注意: min_chunk_tokens 不再作为可配置参数，而是自动计算为 chunk_token_num 的三分之一。
 
     Returns:
         分块列表
