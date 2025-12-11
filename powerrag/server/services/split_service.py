@@ -384,7 +384,11 @@ def regex_based_chunking(
         if new_tokens <= chunk_token_num:
             current_chunk.append(part)
         else:
-            # 处理当前part
+            # 先处理已累积的current_chunk（如果有）
+            if current_chunk:
+                current_chunk_text = ''.join(current_chunk)
+                process_chunk(current_chunk_text)
+            # 再处理当前part
             process_chunk(part)
             current_chunk = []
     
