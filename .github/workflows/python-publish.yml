@@ -1,0 +1,71 @@
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install Poetry
+      run: |
+        pip install poetry
+    
+    - name: Set version from release tag
+      working-directory: ./powerrag/sdk
+      run: |
+        # Extract version from tag (e.g., sdk-v0.1.0 -> 0.1.0 or v0.1.0 -> 0.1.0)
+        VERSION="${{ github.ref_name }}"
+        VERSION="${VERSION#v}"
+        echo "Setting version to: $VERSION"
+        poetry version "$VERSION"
+        cat pyproject.toml | grep "^version"
+    
+    - name: Install dependencies
+      working-directory: ./powerrag/sdk
+      run: |
+        poetry install
+    
+    - name: Build package
+      working-directory: ./powerrag/sdk
+      run: |
+        poetry build
+
+    - name: Upload distributions
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-dists
+        path: powerrag/sdk/dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
