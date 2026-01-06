@@ -42,7 +42,7 @@ exclude = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9,<4.0"
+python = ">=3.10,<4.0"
 requests = ">=2.28.0"
 typing-extensions = { version = ">=4.0.0", python = "<3.11" }
 
