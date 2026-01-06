@@ -1,6 +1,0 @@
-include README.md
-include ../../LICENSE
-recursive-include powerrag/sdk *.py
-recursive-exclude powerrag/sdk/__pycache__ *
-recursive-exclude powerrag/sdk/tests *
-

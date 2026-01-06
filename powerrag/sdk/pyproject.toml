@@ -25,9 +25,20 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-# Include SDK modules using relative path from repository root
+# Package configuration
+# IMPORTANT: Build must be run from repository root (not from powerrag/sdk/)
+# This ensures the package path 'powerrag.sdk' is correctly resolved
+# Build workflow: GitHub Action copies this file to root and runs poetry build
+# Import path: from powerrag.sdk import PowerRAGClient
 packages = [
-    { include = "powerrag/sdk", from = "../.." },
+    { include = "powerrag/sdk" },
+]
+
+# Exclude patterns (Poetry automatically excludes __pycache__, *.pyc, tests, etc.)
+exclude = [
+    "powerrag/sdk/tests",
+    "powerrag/sdk/**/__pycache__",
+    "powerrag/sdk/**/*.pyc",
 ]
 
 [tool.poetry.dependencies]

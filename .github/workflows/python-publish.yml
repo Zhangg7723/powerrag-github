@@ -26,10 +26,13 @@ jobs:
       run: |
         pip install poetry
     
-    - name: Set version from release tag
-      working-directory: ./powerrag/sdk
+    - name: Copy pyproject.toml to root and set version
       run: |
-        # Extract version from tag (e.g., sdk-v0.1.0 -> 0.1.0 or v0.1.0 -> 0.1.0)
+        # Copy SDK pyproject.toml to repository root for building
+        cp powerrag/sdk/pyproject.toml .
+        cp powerrag/sdk/README.md .
+        
+        # Extract version from tag (e.g., v0.1.0 -> 0.1.0)
         VERSION="${{ github.ref_name }}"
         VERSION="${VERSION#v}"
         echo "Setting version to: $VERSION"
@@ -37,12 +40,10 @@ jobs:
         cat pyproject.toml | grep "^version"
     
     - name: Install dependencies
-      working-directory: ./powerrag/sdk
       run: |
-        poetry install
+        poetry install --only main
     
     - name: Build package
-      working-directory: ./powerrag/sdk
       run: |
         poetry build
 
@@ -50,7 +51,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: release-dists
-        path: powerrag/sdk/dist/
+        path: dist/
 
   pypi-publish:
     runs-on: ubuntu-latest
