@@ -21,27 +21,6 @@ This module provides advanced parsing, splitting, and extraction components
 that can be integrated into the RAGFlow pipeline system.
 """
 
-# Import all PowerRAG components for pipeline integration
-from .flow.parsers.powerrag_parsers import (
-    PDFParser,
-    PDFParserParam,
-)
-
-from .flow.splitters.powerrag_splitters import (
-    TitleBasedSplitter,
-    TitleBasedSplitterParam,
-)
-
-from .flow.extractors.powerrag_extractors import (
-    EntityExtractor,
-    EntityExtractorParam,
-)
-
-from .flow.converters.powerrag_converters import (
-    DocumentToPDF,
-    DocumentToPDFParam,
-)
-
 # Export all components for pipeline registration
 __all__ = [
     # Parsers

@@ -428,3 +428,165 @@ class TestDocumentParseToMDUpload:
         
         assert "markdown" in result
         assert result["markdown_length"] > 0
+
+
+class TestDocumentParseToMDBinary:
+    """测试使用二进制文件解析为 Markdown"""
+    
+    def test_parse_to_md_binary_basic(self, client: PowerRAGClient, test_file_path: str):
+        """测试基本的二进制文件解析功能"""
+        # 读取文件为二进制
+        with open(test_file_path, "rb") as f:
+            file_binary = f.read()
+        
+        # 使用二进制数据解析
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="test_document.html"
+        )
+        
+        # 验证返回结果
+        assert "filename" in result
+        assert "markdown" in result
+        assert "markdown_length" in result
+        assert "images" in result
+        assert "total_images" in result
+        assert isinstance(result["markdown"], str)
+        assert result["markdown_length"] > 0
+    
+    def test_parse_to_md_binary_with_config(self, client: PowerRAGClient, test_file_path: str):
+        """测试带配置参数的二进制文件解析"""
+        with open(test_file_path, "rb") as f:
+            file_binary = f.read()
+        
+        config = {
+            "layout_recognize": "mineru",
+            "enable_ocr": False,
+            "enable_table": True
+        }
+        
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="test_document.html",
+            config=config
+        )
+        
+        assert "markdown" in result
+        assert len(result["markdown"]) > 0
+        assert result["markdown_length"] > 0
+    
+    def test_parse_to_md_binary_empty_content(self, client: PowerRAGClient):
+        """测试空的二进制内容"""
+        with pytest.raises(ValueError) as exc_info:
+            client.document.parse_to_md_binary(
+                file_binary=b"",
+                filename="test.html"
+            )
+        
+        assert "cannot be empty" in str(exc_info.value).lower()
+    
+    def test_parse_to_md_binary_empty_filename(self, client: PowerRAGClient):
+        """测试空的文件名"""
+        with pytest.raises(ValueError) as exc_info:
+            client.document.parse_to_md_binary(
+                file_binary=b"test content",
+                filename=""
+            )
+        
+        assert "cannot be empty" in str(exc_info.value).lower()
+    
+    def test_parse_to_md_binary_different_file_types(self, client: PowerRAGClient, tmp_path):
+        """测试不同文件类型的二进制解析"""
+        # 测试 HTML 文件
+        html_file = tmp_path / "test.html"
+        html_content = "<html><body><h1>Test</h1><p>Content</p></body></html>"
+        html_file.write_text(html_content)
+        
+        with open(html_file, "rb") as f:
+            file_binary = f.read()
+        
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="test.html"
+        )
+        
+        assert "markdown" in result
+        assert result["markdown_length"] > 0
+    
+    def test_parse_to_md_binary_with_images(self, client: PowerRAGClient, test_file_path: str):
+        """测试解析带图片的文档（二进制）"""
+        with open(test_file_path, "rb") as f:
+            file_binary = f.read()
+        
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="test_document.html"
+        )
+        
+        # 验证图片相关字段
+        assert "images" in result
+        assert "total_images" in result
+        assert isinstance(result["images"], dict)
+        assert isinstance(result["total_images"], int)
+        assert result["total_images"] >= 0
+    
+    def test_parse_to_md_binary_filename_with_extension(self, client: PowerRAGClient, test_file_path: str):
+        """测试文件名必须包含扩展名"""
+        with open(test_file_path, "rb") as f:
+            file_binary = f.read()
+        
+        # 测试带正确扩展名的文件名
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="document.html"
+        )
+        
+        assert result["filename"] == "document.html"
+        assert "markdown" in result
+    
+    def test_parse_to_md_binary_large_file(self, client: PowerRAGClient, tmp_path):
+        """测试较大文件的二进制解析"""
+        # 创建一个相对较大的测试文件
+        large_file = tmp_path / "large_test.html"
+        large_content = "<html><body>" + "<p>Test paragraph.</p>" * 1000 + "</body></html>"
+        large_file.write_text(large_content)
+        
+        with open(large_file, "rb") as f:
+            file_binary = f.read()
+        
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="large_test.html"
+        )
+        
+        assert "markdown" in result
+        assert result["markdown_length"] > 0
+        # 验证内容长度合理
+        assert len(result["markdown"]) > 1000
+    
+    def test_parse_to_md_binary_utf8_content(self, client: PowerRAGClient, tmp_path):
+        """测试包含UTF-8字符的文件"""
+        utf8_file = tmp_path / "utf8_test.html"
+        utf8_content = """
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="UTF-8"><title>UTF-8测试</title></head>
+        <body>
+            <h1>中文标题</h1>
+            <p>这是中文内容。</p>
+            <p>English content with special chars: é, ñ, ü</p>
+        </body>
+        </html>
+        """
+        utf8_file.write_text(utf8_content, encoding="utf-8")
+        
+        with open(utf8_file, "rb") as f:
+            file_binary = f.read()
+        
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="utf8_test.html"
+        )
+        
+        assert "markdown" in result
+        assert result["markdown_length"] > 0
