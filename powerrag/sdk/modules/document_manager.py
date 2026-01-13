@@ -17,6 +17,7 @@
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 from .document import DocumentInfo
+import json
 
 
 class DocumentManager:
@@ -615,6 +616,45 @@ class DocumentManager:
         
         return res_json.get("data", {})
     
+    def _parse_to_md_with_binary(
+        self,
+        file_binary: bytes,
+        filename: str,
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Internal helper method to parse file binary to Markdown
+        
+        Args:
+            file_binary: Binary content of the file
+            filename: Name of the file (must include correct extension)
+            config: Parse configuration (optional)
+        
+        Returns:
+            Parse result dictionary
+        
+        Raises:
+            Exception: API call failed
+        """
+        # Prepare files from binary data
+        files = [("file", (filename, file_binary))]
+        
+        # Prepare form data
+        form_data = {}
+        if config:
+            form_data["config"] = json.dumps(config)
+        
+        url = "/powerrag/parse_to_md/upload"
+        res = self.client.post(url, json=None, files=files, data=form_data)
+        
+        # Parse JSON response
+        res_json = res.json()
+        
+        if res_json.get("code") != 0:
+            raise Exception(res_json.get("message", "Parse to markdown failed"))
+        
+        return res_json.get("data", {})
+    
     def parse_to_md_upload(
         self,
         file_path: str,
@@ -660,26 +700,11 @@ class DocumentManager:
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
         
-        # Prepare files
+        # Read file and delegate to helper method
         with open(path, "rb") as f:
-            files = [("file", (path.name, f.read()))]
+            file_binary = f.read()
         
-        # Prepare form data
-        import json
-        form_data = {}
-        if config:
-            form_data["config"] = json.dumps(config)
-        
-        url = "/powerrag/parse_to_md/upload"
-        res = self.client.post(url, json=None, files=files, data=form_data)
-        
-        # Parse JSON response
-        res_json = res.json()
-        
-        if res_json.get("code") != 0:
-            raise Exception(res_json.get("message", "Parse to markdown (upload) failed"))
-        
-        return res_json.get("data", {})
+        return self._parse_to_md_with_binary(file_binary, path.name, config)
     
     def parse_to_md_binary(
         self,
@@ -737,25 +762,8 @@ class DocumentManager:
         if not filename:
             raise ValueError("filename cannot be empty")
         
-        # Prepare files from binary data
-        files = [("file", (filename, file_binary))]
-        
-        # Prepare form data
-        import json
-        form_data = {}
-        if config:
-            form_data["config"] = json.dumps(config)
-        
-        url = "/powerrag/parse_to_md/upload"
-        res = self.client.post(url, json=None, files=files, data=form_data)
-        
-        # Parse JSON response
-        res_json = res.json()
-        
-        if res_json.get("code") != 0:
-            raise Exception(res_json.get("message", "Parse to markdown (binary) failed"))
-        
-        return res_json.get("data", {})
+        # Delegate to helper method
+        return self._parse_to_md_with_binary(file_binary, filename, config)
     
     def parse_url(
         self,
