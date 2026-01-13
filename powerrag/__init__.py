@@ -13,29 +13,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-
-"""
-PowerRAG - Advanced RAG Components for RAGFlow Pipeline
-
-This module provides advanced parsing, splitting, and extraction components
-that can be integrated into the RAGFlow pipeline system.
-"""
-
-# Export all components for pipeline registration
-__all__ = [
-    # Parsers
-    "PDFParser",
-    "PDFParserParam",
-    
-    # Splitters
-    "TitleBasedSplitter",
-    "TitleBasedSplitterParam",
-    
-    # Extractors
-    "EntityExtractor",
-    "EntityExtractorParam",
-    
-    # Converters
-    "DocumentToPDF",
-    "DocumentToPDFParam",
-]
