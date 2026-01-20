@@ -7,6 +7,7 @@
 - 🐬 [Docker 环境变量](#-docker-环境变量)
 - 🐋 [服务配置](#-服务配置)
 - 📋 [配置示例](#-配置示例)
+- 🔧 [故障排除](#-故障排除)
 
 </details>
 
@@ -194,4 +195,65 @@ OCEANBASE_DOC_DBNAME=powerrag_doc
 2. 更新 `docker-compose.yml` 中的卷路径以指向您的证书文件
 3. 确保证书文件包含完整的证书链
 4. 按照上述 Let's Encrypt 指南中的步骤 4-5 操作
+
+## 🔧 故障排除
+
+### 端口已被占用错误
+
+如果您遇到类似以下的错误：
+```
+Error response from daemon: driver failed programming external connectivity on endpoint powerrag-oceanbase-1: Bind for 0.0.0.0:2881 failed: port is already allocated
+```
+
+此错误发生在 Docker 保留了先前容器运行的过时端口绑定时，即使使用 `netstat` 或 `lsof` 检查时端口显示为空闲。
+
+**解决方案 1：清理 Docker 资源（推荐）**
+
+运行以下命令清理任何孤立的容器和网络：
+
+```bash
+# 停止此项目的所有容器
+docker compose down
+
+# 删除孤立的容器
+docker compose down --remove-orphans
+
+# 如果问题仍然存在，清理 Docker 网络
+docker network prune -f
+
+# 重启服务
+docker compose up -d
+```
+
+**解决方案 2：更改端口**
+
+如果您需要使用不同的端口，编辑 `.env` 文件并更改 `EXPOSE_OB_PORT` 变量：
+
+```dotenv
+EXPOSE_OB_PORT=2882  # 从默认的 2881 更改为其他端口
+```
+
+然后重启服务：
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+**解决方案 3：重启 Docker 守护进程**
+
+如果上述解决方案都不起作用，重启 Docker 守护进程：
+
+```bash
+# 在使用 systemd 的 Linux 上
+sudo systemctl restart docker
+
+# 在 macOS/Windows 上，从应用程序重启 Docker Desktop
+```
+
+然后再次尝试启动服务：
+
+```bash
+docker compose up -d
+```
 
