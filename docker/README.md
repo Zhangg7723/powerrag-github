@@ -22,6 +22,8 @@ This project provides the following docker compose configurations:
 - **docker-compose-self-hosted-ob.yml**  
   Sets up environment for PowerRAG and its dependencies, using self-hosted OceanBase or SeekDB as the database.
 
+All configurations use **Docker named volumes** for data persistence, ensuring cross-platform compatibility across Linux, Windows, and macOS. Configuration files are mounted as read-only from the repository.
+
 The program uses docker-compose.yml by default. You can specify a configuration file using `docker compose -f`. For example, when starting services with a self-hosted database, you can use the following command:
 
 ```shell
@@ -197,6 +199,138 @@ If you already have SSL certificates from another provider:
 4. Follow steps 4-5 from the Let's Encrypt guide above
 
 ## 🔧 Troubleshooting
+
+### Platform-Specific Considerations
+
+PowerRAG's Docker deployment has been designed to work across Linux, Windows, and macOS. The Docker Compose files use **named Docker volumes** for data persistence, which ensures cross-platform compatibility.
+
+#### Windows
+
+When running on Windows, ensure:
+- **Docker Desktop** is installed and running with WSL 2 backend enabled (recommended)
+- If you encounter issues with configuration files, check that configuration files (in `nginx/`, `oceanbase/init.d/`, etc.) use **LF line endings** instead of CRLF:
+  ```bash
+  git config core.autocrlf false
+  git rm --cached -r .
+  git reset --hard
+  ```
+- File paths in volume mounts are handled automatically by Docker Desktop
+
+#### macOS
+
+When running on macOS:
+- **Docker Desktop** is installed and running
+- Set the `MACOS` environment variable in your `.env` file:
+  ```dotenv
+  MACOS=1
+  ```
+- For Apple Silicon (M1/M2/M3), Docker will automatically handle platform emulation
+
+#### Linux
+
+Linux is the primary development platform and should work without additional configuration.
+
+### Volume Management
+
+PowerRAG uses Docker named volumes to store persistent data (logs, database files, history data). These volumes persist across container restarts and updates.
+
+#### Multiple Deployments
+
+Docker Compose automatically prefixes volume names with the project name (from `COMPOSE_PROJECT_NAME` in `.env`, default is `powerrag`). This allows multiple deployments on the same machine without conflicts:
+
+**Example volume naming:**
+- With `COMPOSE_PROJECT_NAME=powerrag`: volumes become `powerrag_powerrag_logs`, `powerrag_oceanbase_data`, etc.
+- With `COMPOSE_PROJECT_NAME=powerrag-dev`: volumes become `powerrag-dev_powerrag_logs`, `powerrag-dev_oceanbase_data`, etc.
+
+**To run multiple deployments:**
+1. Create separate directories for each deployment
+2. In each directory's `.env` file, set a unique `COMPOSE_PROJECT_NAME`:
+   ```dotenv
+   COMPOSE_PROJECT_NAME=powerrag-production
+   # or
+   COMPOSE_PROJECT_NAME=powerrag-dev
+   ```
+3. Each deployment will have its own isolated set of volumes
+
+#### Listing Volumes
+
+To see all PowerRAG-related volumes:
+```bash
+docker volume ls | grep powerrag
+```
+
+#### Backing Up Volumes
+
+Before cleaning up or upgrading, you may want to back up your data:
+
+```bash
+# Back up all PowerRAG volumes
+docker run --rm -v powerrag_powerrag_logs:/data -v $(pwd)/backup:/backup alpine tar czf /backup/powerrag_logs.tar.gz -C /data .
+docker run --rm -v powerrag_oceanbase_data:/data -v $(pwd)/backup:/backup alpine tar czf /backup/oceanbase_data.tar.gz -C /data .
+docker run --rm -v powerrag_powerrag_history_data:/data -v $(pwd)/backup:/backup alpine tar czf /backup/history_data.tar.gz -C /data .
+```
+
+#### Cleaning Up Volumes
+
+> [!WARNING]
+> Removing volumes will permanently delete all data including logs, database contents, and history. Make sure to back up any important data first.
+
+**To remove all PowerRAG volumes and data:**
+
+```bash
+# Stop and remove all containers
+docker compose down
+
+# Remove all PowerRAG volumes
+docker compose down -v
+
+# Or manually remove specific volumes
+docker volume rm powerrag_powerrag_logs powerrag_oceanbase_data powerrag_powerrag_history_data
+```
+
+**To start fresh after cleanup:**
+
+```bash
+docker compose up -d
+```
+
+#### Viewing Logs and Data
+
+**To view logs from running containers:**
+
+```bash
+# View PowerRAG service logs
+docker compose logs -f powerrag
+
+# View OceanBase database logs
+docker compose logs -f oceanbase
+
+# View all service logs
+docker compose logs -f
+```
+
+**To access logs and data in volumes:**
+
+```bash
+# View log files in the volume
+docker run --rm -v powerrag_powerrag_logs:/data alpine ls -la /data
+
+# Read specific log file
+docker run --rm -v powerrag_powerrag_logs:/data alpine cat /data/ragflow.log
+
+# Access volume data interactively
+docker run --rm -it -v powerrag_oceanbase_data:/data alpine sh
+```
+
+**To copy files from volumes to your host:**
+
+```bash
+# Copy logs from volume to current directory
+docker run --rm -v powerrag_powerrag_logs:/data -v $(pwd):/backup alpine cp -r /data /backup/logs
+
+# Copy database data
+docker run --rm -v powerrag_oceanbase_data:/data -v $(pwd):/backup alpine cp -r /data /backup/db_data
+```
 
 ### Port Already Allocated Error
 
