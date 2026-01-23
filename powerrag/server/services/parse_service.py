@@ -140,7 +140,7 @@ class PowerRAGParseService:
             raise
     
     def parse_file_binary(self, binary: bytes, filename: str,
-                         config: Dict[str, Any] = None) -> Dict[str, Any]:
+                         config: Dict[str, Any] = None, input_type: str = 'auto') -> Dict[str, Any]:
         """
         Parse file binary directly (without doc_id) and return markdown + images
         
@@ -150,9 +150,11 @@ class PowerRAGParseService:
         
         Args:
             binary: File binary data
-            filename: Original filename (used to detect format)
-            parser_id: Parser ID (e.g., "title", "naive", "paper")
+            filename: Original filename (used to detect format if possible)
             config: Parser configuration
+            input_type: File type detection mode (default: 'auto'). Can be:
+                - 'auto': Try filename extension first, then auto-detect from binary if no extension (default)
+                - 'pdf', 'office', 'html', 'image', 'markdown': Explicit file type (bypass detection)
             
         Returns:
             Dict containing markdown content and images
@@ -164,22 +166,43 @@ class PowerRAGParseService:
             }
         """
         try:
-            # Check if format is supported
-            file_ext = Path(filename).suffix.lstrip('.').lower()
-            if file_ext not in self.SUPPORTED_FORMATS:
+            # Determine format type based on input_type parameter
+            if input_type == 'auto':
+                # Auto mode: Try extension first, then binary detection
+                file_ext = Path(filename).suffix.lstrip('.').lower()
+                
+                if file_ext and file_ext in self.SUPPORTED_FORMATS:
+                    # Has valid extension, use it
+                    format_type = self.SUPPORTED_FORMATS[file_ext]
+                    logger.info(f"Using filename extension for file type: {format_type} (.{file_ext}) for file: {filename}")
+                else:
+                    # No extension or unsupported extension, auto-detect from binary
+                    from powerrag.utils.file_utils import detect_file_type
+                    format_type = detect_file_type(binary)
+                    logger.info(f"Auto-detected file type from binary: {format_type} for file: {filename}")
+                    
+                    if format_type == 'unknown':
+                        raise ValueError(
+                            f"Unable to determine file type for {filename}. "
+                            f"File has no extension or unsupported extension '{file_ext}', and binary auto-detection failed. "
+                            f"Please provide a valid input_type explicitly."
+                        )
+            elif input_type in ['pdf', 'office', 'html', 'image', 'markdown']:
+                # Use explicitly specified input_type
+                format_type = input_type
+                logger.info(f"Using explicit input_type: {format_type} for file: {filename}")
+            else:
                 raise ValueError(
-                    f"Unsupported format: .{file_ext}. "
-                    f"PowerRAG only supports: {', '.join(sorted(set(self.SUPPORTED_FORMATS.values())))}"
+                    f"Invalid input_type: {input_type}. "
+                    f"Must be 'auto', 'pdf', 'office', 'html', 'image', or 'markdown'"
                 )
-            
-            format_type = self.SUPPORTED_FORMATS[file_ext]
             
             # Parse document to get markdown and images
             md_content, images = self._parse_to_markdown(filename, binary, format_type, config)
             
             return {
                 "filename": filename,
-                "file_format": file_ext,
+                "file_format": Path(filename).suffix.lstrip('.').lower() if filename else 'unknown',
                 "format_type": format_type,
                 "markdown": md_content,
                 "images": images,
@@ -636,15 +659,24 @@ class PowerRAGParseService:
                 logger.error(f"Failed to get binary for doc {doc_id}: {e}", exc_info=True)
                 raise ValueError(f"Failed to retrieve document binary: {e}")
             
-            # Determine format
-            file_ext = Path(doc.name).suffix.lstrip('.').lower()
-            format_type_map = {
-                'pdf': 'pdf', 'docx': 'office', 'doc': 'office',
-                'xlsx': 'office', 'xls': 'office', 'pptx': 'office', 'ppt': 'office',
-                'html': 'html', 'htm': 'html',
-                'jpg': 'image', 'jpeg': 'image', 'png': 'image'
-            }
-            format_type = format_type_map.get(file_ext, 'pdf')
+            # Determine format from config or filename
+            input_type = config.get('input_type')
+            if input_type == 'auto':
+                from powerrag.utils.file_utils import detect_file_type
+                format_type = detect_file_type(binary)
+                logger.info(f"Auto-detected file type: {format_type} for document {doc_id}")
+            elif input_type:
+                format_type = input_type
+            else:
+                # Auto-detect from file extension
+                file_ext = Path(doc.name).suffix.lstrip('.').lower()
+                format_type_map = {
+                    'pdf': 'pdf', 'docx': 'office', 'doc': 'office',
+                    'xlsx': 'office', 'xls': 'office', 'pptx': 'office', 'ppt': 'office',
+                    'html': 'html', 'htm': 'html',
+                    'jpg': 'image', 'jpeg': 'image', 'png': 'image'
+                }
+                format_type = format_type_map.get(file_ext, 'pdf')
             filename = doc.name
         
         # Case 2: Parse from direct binary (filename, binary, format_type provided)

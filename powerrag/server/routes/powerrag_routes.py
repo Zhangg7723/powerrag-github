@@ -980,6 +980,9 @@ async def parse_to_md_upload(tenant_id):
     - enable_table (bool): Enable table recognition (default: true)
     - from_page (int): Start page number (default: 0)
     - to_page (int): End page number (default: 100000)
+    - input_type (str): File type detection mode (default: 'auto'). Options:
+        * 'auto': Try filename extension first, then auto-detect from binary if no extension (default)
+        * 'pdf', 'office', 'html', 'image': Explicit file type (bypass detection)
     
     Response JSON:
     {
@@ -1042,34 +1045,61 @@ async def parse_to_md_upload(tenant_id):
         # Add filename to config
         config['filename'] = filename
         
-        # Determine format type
-        from pathlib import Path
-        file_ext = Path(filename).suffix.lstrip('.').lower()
+        # Get input_type parameter (default: 'auto')
+        input_type = config.get('input_type', 'auto')
         
-        logger.info(f"Parsed filename: {filename}, extension: '{file_ext}'")
-        
-        if not file_ext:
+        # Determine format type based on input_type
+        if input_type == 'auto':
+            # Auto mode: Try extension first, then binary detection
+            from pathlib import Path
+            file_ext = Path(filename).suffix.lstrip('.').lower()
+            
+            if file_ext:
+                # Has extension, try to use it
+                format_type_map = {
+                    'pdf': 'pdf',
+                    'docx': 'office', 'doc': 'office',
+                    'xlsx': 'office', 'xls': 'office',
+                    'pptx': 'office', 'ppt': 'office',
+                    'html': 'html', 'htm': 'html',
+                    'jpg': 'image', 'jpeg': 'image',
+                    'png': 'image'
+                }
+                format_type = format_type_map.get(file_ext)
+                
+                if format_type:
+                    # Valid extension found
+                    logger.info(f"Using filename extension: {format_type} (.{file_ext}) for file: {filename}")
+                else:
+                    # Unsupported extension, try auto-detect from binary
+                    from powerrag.utils.file_utils import detect_file_type
+                    format_type = detect_file_type(binary)
+                    logger.info(f"Extension '{file_ext}' not supported, auto-detected from binary: {format_type} for file: {filename}")
+                    
+                    if format_type == 'unknown':
+                        return jsonify({
+                            "code": 400,
+                            "message": f"Unsupported file extension: {file_ext}. Supported formats: pdf, doc, docx, ppt, pptx, jpg, png, html. Binary auto-detection also failed."
+                        }), 400
+            else:
+                # No extension, auto-detect from binary content
+                from powerrag.utils.file_utils import detect_file_type
+                format_type = detect_file_type(binary)
+                logger.info(f"No extension found, auto-detected file type from binary: {format_type} for file: {filename}")
+                
+                if format_type == 'unknown':
+                    return jsonify({
+                        "code": 400,
+                        "message": f"Unable to determine file type for {filename}. File has no extension and binary auto-detection failed. Please provide a file with a valid extension or specify input_type explicitly."
+                    }), 400
+        elif input_type in ['pdf', 'office', 'html', 'image']:
+            # Use explicitly specified input_type
+            format_type = input_type
+            logger.info(f"Using explicit input_type: {format_type} for file: {filename}")
+        else:
             return jsonify({
                 "code": 400,
-                "message": f"File must have an extension. Filename: '{filename}', parsed extension: '{file_ext}'"
-            }), 400
-        
-        # Supported: PDF, Office (doc/docx/ppt/pptx), HTML, Markdown, Images (jpg/png)
-        format_type_map = {
-            'pdf': 'pdf',
-            'docx': 'office', 'doc': 'office',
-            'xlsx': 'office', 'xls': 'office',
-            'pptx': 'office', 'ppt': 'office',
-            'html': 'html', 'htm': 'html',
-            'jpg': 'image', 'jpeg': 'image',
-            'png': 'image'
-        }
-        
-        format_type = format_type_map.get(file_ext)
-        if not format_type:
-            return jsonify({
-                "code": 400,
-                "message": f"Unsupported file format: {file_ext}. Supported formats: pdf, doc, docx, ppt, pptx, jpg, png, html"
+                "message": f"Invalid input_type: {input_type}. Must be 'auto' (default), 'pdf', 'office', 'html', or 'image'."
             }), 400
         
         # Create service and parse

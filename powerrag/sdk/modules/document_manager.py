@@ -621,14 +621,18 @@ class DocumentManager:
         file_binary: bytes,
         filename: str,
         config: Optional[Dict[str, Any]] = None,
+        input_type: str = 'auto',
     ) -> Dict[str, Any]:
         """
         Internal helper method to parse file binary to Markdown
         
         Args:
             file_binary: Binary content of the file
-            filename: Name of the file (must include correct extension)
+            filename: Name of the file
             config: Parse configuration (optional)
+            input_type: File type detection mode (default: 'auto'). Can be:
+                - 'auto': Try filename extension first, then auto-detect from binary if no extension (default)
+                - 'pdf', 'office', 'html', 'image': Explicit file type (bypass detection)
         
         Returns:
             Parse result dictionary
@@ -642,7 +646,16 @@ class DocumentManager:
         # Prepare form data
         form_data = {}
         if config:
-            form_data["config"] = json.dumps(config)
+            # Add input_type to config if it's not 'auto' (since 'auto' is the default)
+            if input_type != 'auto':
+                config_copy = config.copy()
+                config_copy['input_type'] = input_type
+                form_data["config"] = json.dumps(config_copy)
+            else:
+                form_data["config"] = json.dumps(config)
+        elif input_type != 'auto':
+            # Create config with just input_type if not default
+            form_data["config"] = json.dumps({"input_type": input_type})
         
         url = "/powerrag/parse_to_md/upload"
         res = self.client.post(url, json=None, files=files, data=form_data)
@@ -659,6 +672,7 @@ class DocumentManager:
         self,
         file_path: str,
         config: Optional[Dict[str, Any]] = None,
+        input_type: str = 'auto',
     ) -> Dict[str, Any]:
         """
         上传文件并解析为Markdown（不切分）
@@ -675,6 +689,9 @@ class DocumentManager:
         Args:
             file_path: 文件路径
             config: 解析配置（可选），同 parse_to_md
+            input_type: 文件类型识别模式（默认: 'auto'），支持：
+                - 'auto': 优先使用文件扩展名，无扩展名或不支持时自动识别（默认）
+                - 'pdf', 'office', 'html', 'image': 显式指定文件类型（跳过识别）
         
         Returns:
             解析结果字典，包含以下字段：
@@ -689,12 +706,24 @@ class DocumentManager:
             Exception: API调用失败
         
         Example:
+            >>> # 默认使用扩展名识别（推荐）
             >>> result = doc_manager.parse_to_md_upload(
-            ...     file_path="document.pdf",
-            ...     config={"layout_recognize": "mineru"}
+            ...     file_path="document.pdf"
             ... )
             >>> print(result['markdown'])
-            >>> print(f"Parsed {result['total_images']} images")
+            >>> 
+            >>> # 对于无扩展名文件，input_type='auto' 会自动从二进制内容识别
+            >>> result = doc_manager.parse_to_md_upload(
+            ...     file_path="document_no_ext"
+            ...     # input_type='auto' 是默认值，可以省略
+            ... )
+            >>> print(result['markdown'])
+            >>> 
+            >>> # 显式指定文件类型（跳过自动识别）
+            >>> result = doc_manager.parse_to_md_upload(
+            ...     file_path="document",
+            ...     input_type="pdf"
+            ... )
         """
         path = Path(file_path)
         if not path.exists():
@@ -704,13 +733,14 @@ class DocumentManager:
         with open(path, "rb") as f:
             file_binary = f.read()
         
-        return self._parse_to_md_with_binary(file_binary, path.name, config)
+        return self._parse_to_md_with_binary(file_binary, path.name, config, input_type)
     
     def parse_to_md_binary(
         self,
         file_binary: bytes,
         filename: str,
         config: Optional[Dict[str, Any]] = None,
+        input_type: str = 'auto',
     ) -> Dict[str, Any]:
         """
         直接使用文件二进制内容解析为Markdown（不切分）
@@ -726,13 +756,16 @@ class DocumentManager:
         
         Args:
             file_binary: 文件的二进制内容
-            filename: 文件名（必须包含正确的扩展名）
+            filename: 文件名
             config: 解析配置（可选），同 parse_to_md
                 - layout_recognize: 布局识别引擎 (mineru 或 dots_ocr，默认 mineru)
                 - enable_formula: 是否识别公式 (默认 False)
                 - enable_table: 是否识别表格 (默认 True)
                 - from_page: 起始页（仅 PDF，默认 0）
                 - to_page: 结束页（仅 PDF，默认 100000）
+            input_type: 文件类型识别模式（默认: 'auto'），支持：
+                - 'auto': 优先使用文件扩展名，无扩展名或不支持时自动识别（默认）
+                - 'pdf', 'office', 'html', 'image': 显式指定文件类型（跳过识别）
         
         Returns:
             解析结果字典，包含以下字段：
@@ -749,13 +782,27 @@ class DocumentManager:
         Example:
             >>> with open("document.pdf", "rb") as f:
             ...     file_binary = f.read()
+            >>> # 默认使用扩展名识别（推荐）
             >>> result = doc_manager.parse_to_md_binary(
             ...     file_binary=file_binary,
-            ...     filename="document.pdf",
-            ...     config={"layout_recognize": "mineru", "enable_ocr": True}
+            ...     filename="document.pdf"
             ... )
             >>> print(result['markdown'])
-            >>> print(f"Parsed {result['total_images']} images")
+            >>> 
+            >>> # 对于无扩展名的二进制数据，input_type='auto' 会自动识别
+            >>> result = doc_manager.parse_to_md_binary(
+            ...     file_binary=file_binary,
+            ...     filename="document"  # 无扩展名
+            ...     # input_type='auto' 是默认值
+            ... )
+            >>> print(result['markdown'])
+            >>> 
+            >>> # 显式指定文件类型（跳过自动识别）
+            >>> result = doc_manager.parse_to_md_binary(
+            ...     file_binary=file_binary,
+            ...     filename="document",
+            ...     input_type="pdf"
+            ... )
         """
         if not file_binary:
             raise ValueError("file_binary cannot be empty")
@@ -763,7 +810,7 @@ class DocumentManager:
             raise ValueError("filename cannot be empty")
         
         # Delegate to helper method
-        return self._parse_to_md_with_binary(file_binary, filename, config)
+        return self._parse_to_md_with_binary(file_binary, filename, config, input_type)
     
     def parse_url(
         self,

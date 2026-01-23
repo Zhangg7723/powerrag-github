@@ -590,3 +590,180 @@ class TestDocumentParseToMDBinary:
         
         assert "markdown" in result
         assert result["markdown_length"] > 0
+
+
+class TestDocumentInputTypeAutoDetection:
+    """测试 input_type 自动检测功能"""
+    
+    def test_auto_detection_with_valid_extension(self, client: PowerRAGClient, tmp_path):
+        """测试有有效扩展名时，input_type='auto' 优先使用扩展名"""
+        # 创建一个 HTML 文件
+        html_file = tmp_path / "test.html"
+        html_content = "<html><body><h1>Test</h1><p>Content</p></body></html>"
+        html_file.write_text(html_content)
+        
+        with open(html_file, "rb") as f:
+            file_binary = f.read()
+        
+        # input_type='auto' 是默认值，会优先使用 .html 扩展名
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="test.html"
+            # input_type='auto' 是默认值，可以省略
+        )
+        
+        assert "markdown" in result
+        assert result["filename"] == "test.html"
+        assert result["markdown_length"] > 0
+    
+    def test_auto_detection_without_extension_pdf(self, client: PowerRAGClient, tmp_path):
+        """测试无扩展名 PDF 文件，input_type='auto' 会自动从二进制检测"""
+        # 创建一个简单的 PDF 文件头（实际测试可能需要真实的 PDF）
+        # 这里我们创建一个有 PDF 魔术数的文件
+        pdf_header = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
+        pdf_content = pdf_header + b"1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\n"
+        
+        # 使用没有扩展名的文件名
+        result = client.document.parse_to_md_binary(
+            file_binary=pdf_content,
+            filename="document_no_extension"
+            # input_type='auto' 会从二进制内容检测出 PDF
+        )
+        
+        # 注意：这个测试可能会因为 PDF 内容不完整而失败
+        # 实际环境中需要使用真实的 PDF 文件
+        assert "filename" in result
+        assert result["filename"] == "document_no_extension"
+    
+    def test_auto_detection_without_extension_html(self, client: PowerRAGClient):
+        """测试无扩展名 HTML 文件，input_type='auto' 会自动从二进制检测"""
+        html_content = b"<html><body><h1>Test Title</h1><p>Test content</p></body></html>"
+        
+        # 使用没有扩展名的文件名
+        result = client.document.parse_to_md_binary(
+            file_binary=html_content,
+            filename="document_without_ext"
+            # input_type='auto' 会从二进制内容检测出 HTML
+        )
+        
+        assert "markdown" in result
+        assert result["filename"] == "document_without_ext"
+        assert result["markdown_length"] > 0
+    
+    def test_explicit_input_type_pdf(self, client: PowerRAGClient, tmp_path):
+        """测试显式指定 input_type='pdf'"""
+        # 创建一个简单的 PDF 内容
+        pdf_header = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
+        pdf_content = pdf_header + b"1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\n"
+        
+        # 显式指定为 PDF 类型，即使文件名没有扩展名
+        result = client.document.parse_to_md_binary(
+            file_binary=pdf_content,
+            filename="document",
+            input_type="pdf"  # 显式指定类型
+        )
+        
+        assert "filename" in result
+    
+    def test_explicit_input_type_html(self, client: PowerRAGClient):
+        """测试显式指定 input_type='html'"""
+        html_content = b"<html><body><h1>Title</h1><p>Paragraph</p></body></html>"
+        
+        # 显式指定为 HTML 类型
+        result = client.document.parse_to_md_binary(
+            file_binary=html_content,
+            filename="document",
+            input_type="html"  # 显式指定类型
+        )
+        
+        assert "markdown" in result
+        assert result["markdown_length"] > 0
+    
+    def test_parse_to_md_upload_with_auto_detection(self, client: PowerRAGClient, tmp_path):
+        """测试 parse_to_md_upload 方法的自动检测功能"""
+        # 创建一个测试文件
+        html_file = tmp_path / "test_auto.html"
+        html_content = "<html><body><h1>Auto Detection Test</h1></body></html>"
+        html_file.write_text(html_content)
+        
+        # 使用默认的 input_type='auto'
+        result = client.document.parse_to_md_upload(str(html_file))
+        
+        assert "markdown" in result
+        assert "filename" in result
+        assert result["markdown_length"] > 0
+    
+    def test_parse_to_md_upload_with_explicit_type(self, client: PowerRAGClient, tmp_path):
+        """测试 parse_to_md_upload 显式指定类型"""
+        html_file = tmp_path / "test_explicit.html"
+        html_content = "<html><body><h1>Explicit Type Test</h1></body></html>"
+        html_file.write_text(html_content)
+        
+        # 显式指定类型
+        result = client.document.parse_to_md_upload(
+            str(html_file),
+            input_type="html"
+        )
+        
+        assert "markdown" in result
+        assert result["markdown_length"] > 0
+    
+    def test_auto_detection_priority_extension_over_binary(self, client: PowerRAGClient, tmp_path):
+        """测试 input_type='auto' 优先使用扩展名而非二进制检测"""
+        # 创建一个 HTML 文件
+        html_file = tmp_path / "priority_test.html"
+        html_content = "<html><body><h1>Priority Test</h1><p>Extension should be used first</p></body></html>"
+        html_file.write_text(html_content)
+        
+        with open(html_file, "rb") as f:
+            file_binary = f.read()
+        
+        # 文件名有 .html 扩展名，应该优先使用扩展名识别
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="priority_test.html"
+            # input_type='auto' 默认值
+        )
+        
+        assert "markdown" in result
+        assert result["filename"] == "priority_test.html"
+        # 验证确实解析成功（说明使用了正确的类型）
+        assert "Priority Test" in result["markdown"] or result["markdown_length"] > 0
+    
+    def test_auto_detection_fallback_to_binary(self, client: PowerRAGClient):
+        """测试扩展名不支持时，fallback 到二进制检测"""
+        html_content = b"<html><body><h1>Fallback Test</h1></body></html>"
+        
+        # 使用一个不支持的扩展名
+        result = client.document.parse_to_md_binary(
+            file_binary=html_content,
+            filename="document.unknown_ext"
+            # input_type='auto' 会先尝试 .unknown_ext（失败），然后从二进制检测
+        )
+        
+        # 应该能够通过二进制检测识别为 HTML
+        assert "markdown" in result
+        assert result["markdown_length"] > 0
+    
+    def test_config_with_input_type(self, client: PowerRAGClient, tmp_path):
+        """测试 config 中包含 input_type 参数"""
+        html_file = tmp_path / "config_test.html"
+        html_content = "<html><body><h1>Config Test</h1></body></html>"
+        html_file.write_text(html_content)
+        
+        with open(html_file, "rb") as f:
+            file_binary = f.read()
+        
+        # 同时使用 config 和 input_type
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="config_test.html",
+            config={
+                "layout_recognize": "mineru",
+                "enable_table": True
+            },
+            input_type="html"
+        )
+        
+        assert "markdown" in result
+        assert result["markdown_length"] > 0

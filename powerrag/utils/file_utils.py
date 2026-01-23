@@ -313,6 +313,71 @@ def _guess_ext(b: bytes) -> str:
         return ".doc"
     return ".bin"
 
+
+def detect_file_type(binary: bytes) -> str:
+    """
+    Detect file type from binary data using magic numbers.
+    
+    Returns the file type as a string compatible with PowerRAG format types:
+    - 'pdf': PDF files
+    - 'office': Office documents (doc, docx, xls, xlsx, ppt, pptx)
+    - 'html': HTML files
+    - 'image': Image files (jpg, jpeg, png)
+    - 'unknown': Unable to determine file type
+    
+    Args:
+        binary: File binary data
+        
+    Returns:
+        File type string ('pdf', 'office', 'html', 'image', 'unknown')
+    """
+    if not binary or len(binary) < 8:
+        return 'unknown'
+    
+    head = binary[:8]
+    
+    # Check PDF
+    if _is_pdf(head):
+        return 'pdf'
+    
+    # Check ZIP-based Office formats (docx, xlsx, pptx)
+    if _is_zip(head):
+        try:
+            with zipfile.ZipFile(io.BytesIO(binary), "r") as z:
+                names = [n.lower() for n in z.namelist()]
+                if any(n.startswith("word/") for n in names):
+                    return 'office'  # docx
+                if any(n.startswith("ppt/") for n in names):
+                    return 'office'  # pptx
+                if any(n.startswith("xl/") for n in names):
+                    return 'office'  # xlsx
+        except Exception:
+            pass
+    
+    # Check OLE-based Office formats (doc, xls, ppt)
+    if _is_ole(head):
+        return 'office'
+    
+    # Check common image formats
+    # JPEG: FF D8 FF
+    if head.startswith(b"\xFF\xD8\xFF"):
+        return 'image'
+    
+    # PNG: 89 50 4E 47 0D 0A 1A 0A
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return 'image'
+    
+    # Check HTML (basic detection)
+    # Try to decode as text and check for HTML markers
+    try:
+        text_sample = binary[:1024].decode('utf-8', errors='ignore').lower()
+        if '<html' in text_sample or '<!doctype html' in text_sample or '<head' in text_sample:
+            return 'html'
+    except Exception:
+        pass
+    
+    return 'unknown'
+
 # Try to extract the real embedded payload from OLE's Ole10Native
 def _extract_ole10native_payload(data: bytes) -> bytes:
     try:

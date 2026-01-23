@@ -18,12 +18,20 @@ import os
 import time
 import pytest
 from pathlib import Path
-
 from powerrag.sdk import PowerRAGClient
+from dotenv import load_dotenv
 
+load_dotenv()
 # 从环境变量获取配置
-HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9222")
-API_KEY = os.getenv("POWERRAG_API_KEY", "ragflow-MAln1FNDn9PhIcqv1axaaUT3mM-efUZ83O5LVcroe9E")
+HOST_ADDRESS = os.getenv("HOST_ADDRESS", "http://127.0.0.1:9390")
+API_KEY = os.getenv("POWERRAG_API_KEY")
+
+if not API_KEY:
+    raise ValueError(
+        "POWERRAG_API_KEY environment variable is not set. "
+        "Please set it in your .env file or system environment. "
+        "Copy .env.example to .env and update with your API key."
+    )
 
 
 @pytest.fixture(scope="session")
