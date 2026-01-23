@@ -960,6 +960,7 @@ async def parse_to_md_upload(tenant_id):
     Parse uploaded file to Markdown WITHOUT chunking
     
     直接上传文件并解析为 Markdown，不进行切分。
+    支持两种方式：1) 直接上传文件 2) 提供文件URL
     
     支持的文件格式:
     - PDF (.pdf)
@@ -970,7 +971,8 @@ async def parse_to_md_upload(tenant_id):
     Authentication: Requires RAGFlow API key in Authorization header (Bearer token)
     
     Request (multipart/form-data):
-    - file: File to parse (required) - supports PDF, Office (doc/docx/ppt/pptx), Images (jpg/png), HTML
+    - file: File to parse (optional, required if file_url not provided)
+    - file_url: URL of file to download and parse (optional, required if file not provided)
     - config: JSON string of parser config (optional)
     
     Config parameters:
@@ -983,6 +985,7 @@ async def parse_to_md_upload(tenant_id):
     - input_type (str): File type detection mode (default: 'auto'). Options:
         * 'auto': Try filename extension first, then auto-detect from binary if no extension (default)
         * 'pdf', 'office', 'html', 'image': Explicit file type (bypass detection)
+    - filename (str): Override filename (optional, useful with file_url)
     
     Response JSON:
     {
@@ -998,21 +1001,6 @@ async def parse_to_md_upload(tenant_id):
     }
     """
     try:
-        # Check if file is present
-        files = await request.files
-        if 'file' not in files:
-            return jsonify({
-                "code": 400,
-                "message": "No file provided"
-            }), 400
-        
-        file = files['file']
-        if file.filename == '':
-            return jsonify({
-                "code": 400,
-                "message": "No file selected"
-            }), 400
-        
         # Parse config from JSON string if provided
         import json
         form = await request.form
@@ -1025,22 +1013,79 @@ async def parse_to_md_upload(tenant_id):
                 "message": "Invalid JSON in config parameter"
             }), 400
         
-        # Read file binary
-        filename = file.filename
-        logger.info(f"Received file upload: filename={filename}, file object={file}")
+        # Get file_url parameter
+        file_url = form.get('file_url')
         
-        if not filename:
+        # Check if file or file_url is provided
+        files = await request.files
+        has_file = 'file' in files and files['file'].filename != ''
+        has_url = file_url and file_url.strip() != ''
+        
+        if not has_file and not has_url:
             return jsonify({
                 "code": 400,
-                "message": "Filename is required"
+                "message": "Either 'file' or 'file_url' must be provided"
             }), 400
         
-        binary = file.read()
-        if not binary:
+        if has_file and has_url:
             return jsonify({
                 "code": 400,
-                "message": "File is empty"
+                "message": "Cannot provide both 'file' and 'file_url'. Please choose one."
             }), 400
+        
+        # Handle file upload or URL download
+        if has_file:
+            # Direct file upload
+            file = files['file']
+            filename = file.filename
+            logger.info(f"Received file upload: filename={filename}")
+            
+            if not filename:
+                return jsonify({
+                    "code": 400,
+                    "message": "Filename is required"
+                }), 400
+            
+            binary = file.read()
+            if not binary:
+                return jsonify({
+                    "code": 400,
+                    "message": "File is empty"
+                }), 400
+        else:
+            # Download from URL
+            import requests
+            from urllib.parse import urlparse
+            from pathlib import Path
+            
+            logger.info(f"Downloading file from URL: {file_url}")
+            
+            try:
+                response = requests.get(file_url, timeout=60)
+                response.raise_for_status()
+                binary = response.content
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Failed to download file from URL: {file_url}. Error: {e}")
+                return jsonify({
+                    "code": 400,
+                    "message": f"Failed to download file from URL: {str(e)}"
+                }), 400
+            
+            if not binary:
+                return jsonify({
+                    "code": 400,
+                    "message": "Downloaded file is empty"
+                }), 400
+            
+            # Extract filename from URL or use override from config
+            filename = config.get('filename')
+            if not filename:
+                parsed_url = urlparse(file_url)
+                filename = Path(parsed_url.path).name
+                if not filename:
+                    filename = "downloaded_file"
+            
+            logger.info(f"Downloaded file: {filename}, size: {len(binary)} bytes")
         
         # Add filename to config
         config['filename'] = filename

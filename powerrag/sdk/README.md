@@ -119,10 +119,48 @@ print(f"Status: {status['status']}")
 # 等待任务完成
 result = client.document.wait_for_parse_to_md(task_id, timeout=300)
 
-# 直接上传文件并解析为 Markdown
+# 直接上传文件并解析为 Markdown（无需知识库）
 result = client.document.parse_to_md_upload(
     "document.pdf",
     config={"layout_recognize": "mineru"}
+)
+
+# 从 URL 下载并解析（直接调用 API）
+import requests
+import json
+
+response = requests.post(
+    f"{client.api_url}/powerrag/parse_to_md/upload",
+    headers={"Authorization": f"Bearer {client.api_key}"},
+    data={
+        "file_url": "https://example.com/document.pdf",
+        "config": json.dumps({"layout_recognize": "mineru"})
+    }
+)
+result = response.json()
+
+# 使用二进制数据解析（支持无扩展名文件）
+with open("document.pdf", "rb") as f:
+    binary_data = f.read()
+
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document.pdf",  # 有扩展名时自动识别
+    config={"layout_recognize": "mineru"}
+)
+
+# 对于无扩展名的文件，使用 input_type='auto' 自动识别
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document_no_extension",  # 无扩展名
+    # input_type='auto' 是默认值，会自动从二进制内容检测文件类型
+)
+
+# 或显式指定文件类型
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document",
+    input_type="pdf"  # 强制作为 PDF 处理
 )
 ```
 
@@ -156,7 +194,7 @@ PowerRAG SDK 提供了强大的文档解析为 Markdown 的功能，支持多种
 - 图片 (.jpg, .png)
 - HTML (.html, .htm)
 
-**三种使用方式：**
+**四种使用方式：**
 
 1. **同步解析**（适合小文档）：
 ```python
@@ -173,7 +211,38 @@ result = client.document.wait_for_parse_to_md(task_id, timeout=300)
 
 3. **直接上传解析**（无需知识库）：
 ```python
+# 上传本地文件
 result = client.document.parse_to_md_upload("file.pdf", config={...})
+
+# 或使用 file_url 参数从URL下载（通过 config 传入）
+import requests
+response = requests.post(
+    "http://localhost:9390/api/v1/powerrag/parse_to_md/upload",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    data={
+        "file_url": "https://example.com/document.pdf",
+        "config": json.dumps({"layout_recognize": "mineru"})
+    }
+)
+```
+
+4. **二进制数据解析**（支持无扩展名文件）：
+```python
+with open("document.pdf", "rb") as f:
+    binary_data = f.read()
+
+# 自动识别文件类型（默认）
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document_no_extension"  # 无扩展名也可以
+)
+
+# 或显式指定类型
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document",
+    input_type="pdf"  # 'pdf', 'office', 'html', 'image'
+)
 ```
 
 **配置选项：**
@@ -182,6 +251,9 @@ result = client.document.parse_to_md_upload("file.pdf", config={...})
 - `enable_formula`: 是否识别公式
 - `enable_table`: 是否识别表格
 - `from_page`/`to_page`: PDF 页面范围
+- `input_type`: 文件类型识别模式（默认: `'auto'`）
+  - `'auto'`: 优先使用文件扩展名，无扩展名时自动检测（推荐）
+  - `'pdf'`, `'office'`, `'html'`, `'image'`: 显式指定文件类型
 
 ### 结构化信息抽取
 
@@ -338,6 +410,62 @@ result = client.document.wait_for_parse_to_md(task_id, timeout=300)
 
 # 上传并解析为 Markdown（无需知识库）
 result = client.document.parse_to_md_upload("file.pdf", config={...})
+
+# 使用 file_url 参数从 URL 下载并解析（直接调用 API）
+import requests
+import json
+
+response = requests.post(
+    f"{client.api_url}/powerrag/parse_to_md/upload",
+    headers={"Authorization": f"Bearer {client.api_key}"},
+    data={
+        "file_url": "https://example.com/document.pdf",
+        "config": json.dumps({
+            "layout_recognize": "mineru",
+            "input_type": "auto"  # 可选，自动检测文件类型
+        })
+    }
+)
+result = response.json()
+
+# 使用 file_url 并指定文件名
+response = requests.post(
+    f"{client.api_url}/powerrag/parse_to_md/upload",
+    headers={"Authorization": f"Bearer {client.api_key}"},
+    data={
+        "file_url": "https://example.com/download?id=123",
+        "config": json.dumps({
+            "filename": "report.pdf",  # 自定义文件名
+            "input_type": "pdf",
+            "layout_recognize": "mineru"
+        })
+    }
+)
+
+# 使用二进制数据解析为 Markdown
+with open("document.pdf", "rb") as f:
+    binary_data = f.read()
+
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document.pdf",
+    config={"layout_recognize": "mineru"},
+    input_type="auto"  # 默认值，自动识别文件类型
+)
+
+# 无扩展名文件解析（自动检测文件类型）
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document_no_extension",  # 无扩展名
+    # input_type='auto' 会从二进制内容自动检测 PDF/Office/HTML 等
+)
+
+# 显式指定文件类型（跳过自动检测）
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document",
+    input_type="pdf"  # 强制作为 PDF 处理
+)
 
 # 解析URL文档（同步等待）
 doc = client.document.parse_url(
@@ -1042,6 +1170,103 @@ for result in results:
         print(f"Document {result['doc_id']} failed to parse")
         # 重新解析或删除
 ```
+
+### Q: 如何解析无扩展名的文件？
+
+A: 使用 `parse_to_md_binary` 方法并使用 `input_type='auto'`（默认值）：
+```python
+with open("document_no_extension", "rb") as f:
+    binary_data = f.read()
+
+# input_type='auto' 会自动从二进制内容检测文件类型
+result = client.document.parse_to_md_binary(
+    file_binary=binary_data,
+    filename="document_no_extension"
+    # input_type='auto' 是默认值，可以省略
+)
+```
+
+支持的 `input_type` 值：
+- `'auto'` (默认): 优先使用文件扩展名，无扩展名或不支持时从二进制内容自动检测
+- `'pdf'`, `'office'`, `'html'`, `'image'`: 显式指定文件类型
+
+### Q: 如何从URL直接解析文件？
+
+A: 在 `/parse_to_md/upload` API 请求中使用 `file_url` 参数，服务器会自动下载并解析：
+
+**方式 1：基本用法**
+```python
+import requests
+import json
+
+# 使用 file_url 参数
+response = requests.post(
+    "http://localhost:9390/api/v1/powerrag/parse_to_md/upload",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    data={
+        "file_url": "https://example.com/document.pdf",
+        "config": json.dumps({
+            "layout_recognize": "mineru",
+            "input_type": "auto"  # 可选，默认为 'auto'
+        })
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+**方式 2：指定文件名（适用于无扩展名URL）**
+```python
+response = requests.post(
+    "http://localhost:9390/api/v1/powerrag/parse_to_md/upload",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},
+    data={
+        "file_url": "https://api.example.com/download?id=123",
+        "config": json.dumps({
+            "filename": "report.pdf",  # 覆盖文件名
+            "input_type": "pdf",  # 显式指定类型
+            "layout_recognize": "mineru",
+            "enable_table": True
+        })
+    }
+)
+```
+
+**方式 3：与 SDK 客户端结合使用**
+```python
+from powerrag.sdk import PowerRAGClient
+import requests
+import json
+
+client = PowerRAGClient(api_key="your-api-key", base_url="http://localhost:9390")
+
+# 使用客户端的 api_url 和认证信息
+response = requests.post(
+    f"{client.api_url}/powerrag/parse_to_md/upload",
+    headers={"Authorization": f"Bearer {client.api_key}"},
+    data={
+        "file_url": "https://example.com/document.pdf",
+        "config": json.dumps({"layout_recognize": "mineru"})
+    }
+)
+```
+
+**配置参数说明：**
+- `file_url` (str): 文件的 URL 地址（与 `file` 参数二选一）
+- `config.filename` (str): 自定义文件名（可选，不提供则从 URL 提取）
+- `config.input_type` (str): 文件类型检测模式
+  - `'auto'` (默认): 优先使用扩展名，无扩展名时自动检测
+  - `'pdf'`, `'office'`, `'html'`, `'image'`: 显式指定类型
+- `config.layout_recognize` (str): 布局识别引擎（`'mineru'` 或 `'dots_ocr'`）
+- 其他解析配置参数同 `parse_to_md` 方法
+
+**注意事项：**
+- ✅ URL 必须可公开访问，不支持需要认证的 URL
+- ✅ 下载超时时间为 60 秒
+- ✅ 支持所有文件格式（PDF, Office, HTML, 图片）
+- ✅ 自动从 URL 路径提取文件名，或使用 `config.filename` 覆盖
+- ❌ 不能同时提供 `file` 和 `file_url` 参数
+- ❌ 必须提供 `file` 或 `file_url` 其中之一
 
 ### Q: SDK 是否支持流式返回？
 

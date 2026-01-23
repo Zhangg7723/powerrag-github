@@ -767,3 +767,198 @@ class TestDocumentInputTypeAutoDetection:
         
         assert "markdown" in result
         assert result["markdown_length"] > 0
+
+
+class TestDocumentFileUrl:
+    """测试 file_url 参数功能"""
+    
+    def test_parse_from_url_basic(self, client: PowerRAGClient):
+        """测试从URL下载并解析文件（基本功能）"""
+        import requests
+        import json
+        
+        # 使用一个公开可访问的示例 HTML URL
+        file_url = "https://httpbin.org/html"
+        
+        # 直接调用 API（因为 SDK 方法已被删除）
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={
+                "file_url": file_url,
+                "config": json.dumps({"input_type": "html"})
+            }
+        )
+        
+        assert response.status_code == 200
+        result = response.json()
+        assert result["code"] == 0
+        assert "markdown" in result["data"]
+        assert result["data"]["markdown_length"] > 0
+    
+    def test_parse_from_url_with_filename(self, client: PowerRAGClient):
+        """测试从URL下载并指定文件名"""
+        import requests
+        import json
+        
+        file_url = "https://httpbin.org/html"
+        custom_filename = "custom_document.html"
+        
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={
+                "file_url": file_url,
+                "config": json.dumps({
+                    "filename": custom_filename,
+                    "input_type": "html"
+                })
+            }
+        )
+        
+        assert response.status_code == 200
+        result = response.json()
+        assert result["code"] == 0
+        assert result["data"]["filename"] == custom_filename
+    
+    def test_parse_from_url_with_auto_detection(self, client: PowerRAGClient):
+        """测试从URL下载，使用 input_type='auto' 自动检测"""
+        import requests
+        import json
+        
+        file_url = "https://httpbin.org/html"
+        
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={
+                "file_url": file_url,
+                "config": json.dumps({
+                    "input_type": "auto"  # 自动检测
+                })
+            }
+        )
+        
+        assert response.status_code == 200
+        result = response.json()
+        assert result["code"] == 0
+        assert "markdown" in result["data"]
+    
+    def test_parse_from_invalid_url(self, client: PowerRAGClient):
+        """测试无效URL应返回错误"""
+        import requests
+        import json
+        
+        invalid_url = "https://invalid-url-that-does-not-exist-12345.com/file.pdf"
+        
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={
+                "file_url": invalid_url,
+                "config": json.dumps({})
+            }
+        )
+        
+        # 应该返回 400 错误
+        assert response.status_code == 400
+        result = response.json()
+        assert result["code"] == 400
+        assert "Failed to download" in result["message"]
+    
+    def test_parse_cannot_provide_both_file_and_url(self, client: PowerRAGClient, tmp_path):
+        """测试不能同时提供 file 和 file_url"""
+        import requests
+        
+        # 创建临时文件
+        html_file = tmp_path / "test.html"
+        html_file.write_text("<html><body>Test</body></html>")
+        
+        file_url = "https://httpbin.org/html"
+        
+        # 同时提供 file 和 file_url
+        with open(html_file, "rb") as f:
+            response = requests.post(
+                f"{client.api_url}/powerrag/parse_to_md/upload",
+                headers={"Authorization": f"Bearer {client.api_key}"},
+                files={"file": ("test.html", f, "text/html")},
+                data={
+                    "file_url": file_url,
+                    "config": "{}"
+                }
+            )
+        
+        # 应该返回 400 错误
+        assert response.status_code == 400
+        result = response.json()
+        assert result["code"] == 400
+        assert "Cannot provide both" in result["message"]
+    
+    def test_parse_must_provide_file_or_url(self, client: PowerRAGClient):
+        """测试必须提供 file 或 file_url 其中之一"""
+        import requests
+        
+        # 不提供 file 也不提供 file_url
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={"config": "{}"}
+        )
+        
+        # 应该返回 400 错误
+        assert response.status_code == 400
+        result = response.json()
+        assert result["code"] == 400
+        assert "Either 'file' or 'file_url' must be provided" in result["message"]
+    
+    def test_parse_from_url_with_config(self, client: PowerRAGClient):
+        """测试从URL下载并使用完整配置"""
+        import requests
+        import json
+        
+        file_url = "https://httpbin.org/html"
+        
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={
+                "file_url": file_url,
+                "config": json.dumps({
+                    "filename": "complete_config.html",
+                    "input_type": "html",
+                    "layout_recognize": "mineru",
+                    "enable_table": True
+                })
+            }
+        )
+        
+        assert response.status_code == 200
+        result = response.json()
+        assert result["code"] == 0
+        assert result["data"]["filename"] == "complete_config.html"
+        assert "markdown" in result["data"]
+    
+    def test_parse_from_url_empty_file(self, client: PowerRAGClient):
+        """测试从URL下载空文件应返回错误"""
+        import requests
+        import json
+        
+        # 使用一个返回空内容的URL（如果存在）
+        # 注意：这个测试可能需要 mock，这里使用真实场景
+        # httpbin.org/bytes/0 返回 0 字节
+        empty_url = "https://httpbin.org/bytes/0"
+        
+        response = requests.post(
+            f"{client.api_url}/powerrag/parse_to_md/upload",
+            headers={"Authorization": f"Bearer {client.api_key}"},
+            data={
+                "file_url": empty_url,
+                "config": json.dumps({"filename": "empty.bin"})
+            }
+        )
+        
+        # 应该返回 400 错误
+        assert response.status_code == 400
+        result = response.json()
+        assert result["code"] == 400
+        assert "empty" in result["message"].lower()
