@@ -352,6 +352,8 @@ def detect_file_type(binary: bytes) -> str:
                 if any(n.startswith("xl/") for n in names):
                     return 'office'  # xlsx
         except Exception:
+            # Any error while reading as a ZIP (corrupt/non-Office archive, etc.)
+            # means we cannot classify it as a ZIP-based Office file; fall through.
             pass
     
     # Check OLE-based Office formats (doc, xls, ppt)
