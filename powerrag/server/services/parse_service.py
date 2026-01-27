@@ -166,6 +166,10 @@ class PowerRAGParseService:
             }
         """
         try:
+            # Normalize input_type: treat None as 'auto'
+            if input_type is None:
+                input_type = 'auto'
+            
             # Determine format type based on input_type parameter
             if input_type == 'auto':
                 # Auto mode: Try extension first, then binary detection
@@ -187,15 +191,27 @@ class PowerRAGParseService:
                             f"File has no extension or unsupported extension '{file_ext}', and binary auto-detection failed. "
                             f"Please provide a valid input_type explicitly."
                         )
-            elif input_type in ['pdf', 'office', 'html', 'image', 'markdown']:
-                # Use explicitly specified input_type
-                format_type = input_type
-                logger.info(f"Using explicit input_type: {format_type} for file: {filename}")
             else:
-                raise ValueError(
-                    f"Invalid input_type: {input_type}. "
-                    f"Must be 'auto', 'pdf', 'office', 'html', 'image', or 'markdown'"
-                )
+                # input_type is a specific file extension (e.g., 'pdf', 'docx', 'html', 'jpg')
+                # Normalize to lowercase and remove leading dot if present
+                input_ext = input_type.lstrip('.').lower()
+                
+                # Map extension to format type
+                format_type = self.SUPPORTED_FORMATS.get(input_ext)
+                
+                if format_type:
+                    logger.info(f"Using explicit input_type extension: {format_type} (.{input_ext}) for file: {filename}")
+                elif input_ext == 'markdown' or input_ext == 'md':
+                    # Special case for markdown files
+                    format_type = 'markdown'
+                    logger.info(f"Using explicit input_type: {format_type} for file: {filename}")
+                else:
+                    # Invalid extension specified
+                    supported_extensions = ', '.join(sorted(set(self.SUPPORTED_FORMATS.keys()) | {'md', 'markdown'}))
+                    raise ValueError(
+                        f"Invalid input_type: '{input_type}'. "
+                        f"Must be 'auto' (default) or a specific file extension: {supported_extensions}"
+                    )
             
             # Parse document to get markdown and images
             md_content, images = self._parse_to_markdown(filename, binary, format_type, config)
@@ -666,17 +682,30 @@ class PowerRAGParseService:
                 format_type = detect_file_type(binary)
                 logger.info(f"Auto-detected file type: {format_type} for document {doc_id}")
             elif input_type:
-                format_type = input_type
+                # input_type is a specific file extension (e.g., 'pdf', 'docx', 'html', 'jpg')
+                # Normalize to lowercase and remove leading dot if present
+                input_ext = input_type.lstrip('.').lower()
+                
+                # Map extension to format type using SUPPORTED_FORMATS
+                format_type = self.SUPPORTED_FORMATS.get(input_ext)
+                
+                if format_type:
+                    logger.info(f"Using explicit input_type extension: {format_type} (.{input_ext}) for document {doc_id}")
+                elif input_ext == 'markdown' or input_ext == 'md':
+                    # Special case for markdown files
+                    format_type = 'markdown'
+                    logger.info(f"Using explicit input_type: {format_type} for document {doc_id}")
+                else:
+                    # Invalid extension specified
+                    supported_extensions = ', '.join(sorted(set(self.SUPPORTED_FORMATS.keys()) | {'md', 'markdown'}))
+                    raise ValueError(
+                        f"Invalid input_type: '{input_type}'. "
+                        f"Must be 'auto' (default) or a specific file extension: {supported_extensions}"
+                    )
             else:
                 # Auto-detect from file extension
                 file_ext = Path(doc.name).suffix.lstrip('.').lower()
-                format_type_map = {
-                    'pdf': 'pdf', 'docx': 'office', 'doc': 'office',
-                    'xlsx': 'office', 'xls': 'office', 'pptx': 'office', 'ppt': 'office',
-                    'html': 'html', 'htm': 'html',
-                    'jpg': 'image', 'jpeg': 'image', 'png': 'image'
-                }
-                format_type = format_type_map.get(file_ext, 'pdf')
+                format_type = self.SUPPORTED_FORMATS.get(file_ext, 'pdf')
             filename = doc.name
         
         # Case 2: Parse from direct binary (filename, binary, format_type provided)

@@ -396,13 +396,11 @@ class TestDocumentParseToMDUpload:
         result = client.document.parse_to_md_upload(test_file_path)
         
         # 验证返回结果
-        assert "filename" in result
-        assert "markdown" in result
-        assert "markdown_length" in result
+        assert "content" in result
         assert "images" in result
         assert "total_images" in result
-        assert isinstance(result["markdown"], str)
-        assert result["markdown_length"] > 0
+        assert isinstance(result["content"], str)
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_upload_with_config(self, client: PowerRAGClient, test_file_path: str):
         """测试带配置参数上传并解析"""
@@ -412,8 +410,8 @@ class TestDocumentParseToMDUpload:
         }
         result = client.document.parse_to_md_upload(test_file_path, config=config)
         
-        assert "markdown" in result
-        assert len(result["markdown"]) > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_upload_nonexistent_file(self, client: PowerRAGClient):
         """测试上传不存在的文件"""
@@ -426,8 +424,8 @@ class TestDocumentParseToMDUpload:
         # 这里我们只测试 txt 文件，实际使用时可以添加更多格式
         result = client.document.parse_to_md_upload(test_file_path)
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
 
 
 class TestDocumentParseToMDBinary:
@@ -446,13 +444,11 @@ class TestDocumentParseToMDBinary:
         )
         
         # 验证返回结果
-        assert "filename" in result
-        assert "markdown" in result
-        assert "markdown_length" in result
+        assert "content" in result
         assert "images" in result
         assert "total_images" in result
-        assert isinstance(result["markdown"], str)
-        assert result["markdown_length"] > 0
+        assert isinstance(result["content"], str)
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_binary_with_config(self, client: PowerRAGClient, test_file_path: str):
         """测试带配置参数的二进制文件解析"""
@@ -471,9 +467,8 @@ class TestDocumentParseToMDBinary:
             config=config
         )
         
-        assert "markdown" in result
-        assert len(result["markdown"]) > 0
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_binary_empty_content(self, client: PowerRAGClient):
         """测试空的二进制内容"""
@@ -510,8 +505,8 @@ class TestDocumentParseToMDBinary:
             filename="test.html"
         )
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_binary_with_images(self, client: PowerRAGClient, test_file_path: str):
         """测试解析带图片的文档（二进制）"""
@@ -541,8 +536,7 @@ class TestDocumentParseToMDBinary:
             filename="document.html"
         )
         
-        assert result["filename"] == "document.html"
-        assert "markdown" in result
+        assert "content" in result
     
     def test_parse_to_md_binary_large_file(self, client: PowerRAGClient, tmp_path):
         """测试较大文件的二进制解析"""
@@ -559,10 +553,10 @@ class TestDocumentParseToMDBinary:
             filename="large_test.html"
         )
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
         # 验证内容长度合理
-        assert len(result["markdown"]) > 1000
+        assert len(result["content"]) > 1000
     
     def test_parse_to_md_binary_utf8_content(self, client: PowerRAGClient, tmp_path):
         """测试包含UTF-8字符的文件"""
@@ -588,12 +582,110 @@ class TestDocumentParseToMDBinary:
             filename="utf8_test.html"
         )
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
 
 
 class TestDocumentInputTypeAutoDetection:
     """测试 input_type 自动检测功能"""
+    
+    @staticmethod
+    def _create_valid_pdf_content(text_lines=None):
+        """
+        创建一个有效的 PDF 文件内容
+        
+        Args:
+            text_lines: 可选的文本行列表，用于自定义 PDF 内容
+        
+        Returns:
+            bytes: PDF 文件的二进制内容
+        """
+        if text_lines is None:
+            text_lines = ["Test PDF File"]
+        
+        try:
+            from reportlab.pdfgen import canvas
+            from io import BytesIO
+            
+            # 创建一个有效的 PDF 内容
+            buffer = BytesIO()
+            c = canvas.Canvas(buffer)
+            y_pos = 750
+            for line in text_lines:
+                c.drawString(100, y_pos, line)
+                y_pos -= 20
+            c.showPage()
+            c.save()
+            pdf_content = buffer.getvalue()
+            buffer.close()
+            return pdf_content
+        except ImportError:
+            # 如果 reportlab 不可用，创建一个最小但有效的 PDF
+            # 这是一个最小有效的 PDF 1.4 文档，包含一个文本对象
+            return (
+                b"%PDF-1.4\n"
+                b"1 0 obj\n"
+                b"<<\n"
+                b"/Type /Catalog\n"
+                b"/Pages 2 0 R\n"
+                b">>\n"
+                b"endobj\n"
+                b"2 0 obj\n"
+                b"<<\n"
+                b"/Type /Pages\n"
+                b"/Kids [3 0 R]\n"
+                b"/Count 1\n"
+                b">>\n"
+                b"endobj\n"
+                b"3 0 obj\n"
+                b"<<\n"
+                b"/Type /Page\n"
+                b"/Parent 2 0 R\n"
+                b"/MediaBox [0 0 612 792]\n"
+                b"/Contents 4 0 R\n"
+                b"/Resources <<\n"
+                b"/Font <<\n"
+                b"/F1 5 0 R\n"
+                b">>\n"
+                b">>\n"
+                b">>\n"
+                b"endobj\n"
+                b"4 0 obj\n"
+                b"<<\n"
+                b"/Length 44\n"
+                b">>\n"
+                b"stream\n"
+                b"BT\n"
+                b"/F1 12 Tf\n"
+                b"100 700 Td\n"
+                b"(Test PDF) Tj\n"
+                b"ET\n"
+                b"endstream\n"
+                b"endobj\n"
+                b"5 0 obj\n"
+                b"<<\n"
+                b"/Type /Font\n"
+                b"/Subtype /Type1\n"
+                b"/BaseFont /Helvetica\n"
+                b">>\n"
+                b"endobj\n"
+                b"xref\n"
+                b"0 6\n"
+                b"0000000000 65535 f \n"
+                b"0000000009 00000 n \n"
+                b"0000000058 00000 n \n"
+                b"0000000115 00000 n \n"
+                b"0000000306 00000 n \n"
+                b"0000000400 00000 n \n"
+                b"trailer\n"
+                b"<<\n"
+                b"/Size 6\n"
+                b"/Root 1 0 R\n"
+                b">>\n"
+                b"startxref\n"
+                b"492\n"
+                b"%%EOF\n"
+            )
     
     def test_auto_detection_with_valid_extension(self, client: PowerRAGClient, tmp_path):
         """测试有有效扩展名时，input_type='auto' 优先使用扩展名"""
@@ -612,28 +704,29 @@ class TestDocumentInputTypeAutoDetection:
             # input_type='auto' 是默认值，可以省略
         )
         
-        assert "markdown" in result
-        assert result["filename"] == "test.html"
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_auto_detection_without_extension_pdf(self, client: PowerRAGClient, tmp_path):
         """测试无扩展名 PDF 文件，input_type='auto' 会自动从二进制检测"""
-        # 创建一个简单的 PDF 文件头（实际测试可能需要真实的 PDF）
-        # 这里我们创建一个有 PDF 魔术数的文件
-        pdf_header = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
-        pdf_content = pdf_header + b"1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\n"
+        # 创建一个有效的 PDF 文件
+        pdf_content = self._create_valid_pdf_content([
+            "Test PDF File",
+            "This is a test PDF document for auto-detection testing.",
+            "The file has no extension, so binary detection should be used."
+        ])
         
-        # 使用没有扩展名的文件名
+        # 使用没有扩展名的文件名，input_type='auto' 会从二进制内容检测出 PDF
         result = client.document.parse_to_md_binary(
             file_binary=pdf_content,
             filename="document_no_extension"
-            # input_type='auto' 会从二进制内容检测出 PDF
+            # input_type='auto' 是默认值，会从二进制内容检测出 PDF
         )
         
-        # 注意：这个测试可能会因为 PDF 内容不完整而失败
-        # 实际环境中需要使用真实的 PDF 文件
-        assert "filename" in result
-        assert result["filename"] == "document_no_extension"
+        # 验证解析结果
+        assert "content" in result, "Result should contain 'content' field"
+        assert len(result["content"]) > 0, "Content should not be empty (PDF should be successfully parsed)"
+        assert isinstance(result["content"], str), "Content should be a string"
     
     def test_auto_detection_without_extension_html(self, client: PowerRAGClient):
         """测试无扩展名 HTML 文件，input_type='auto' 会自动从二进制检测"""
@@ -646,15 +739,16 @@ class TestDocumentInputTypeAutoDetection:
             # input_type='auto' 会从二进制内容检测出 HTML
         )
         
-        assert "markdown" in result
-        assert result["filename"] == "document_without_ext"
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_explicit_input_type_pdf(self, client: PowerRAGClient, tmp_path):
         """测试显式指定 input_type='pdf'"""
-        # 创建一个简单的 PDF 内容
-        pdf_header = b"%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"
-        pdf_content = pdf_header + b"1 0 obj\n<<\n/Type /Catalog\n>>\nendobj\n"
+        # 创建一个有效的 PDF 文件
+        pdf_content = self._create_valid_pdf_content([
+            "Test PDF File",
+            "This is a test PDF document for PowerRAG SDK testing."
+        ])
         
         # 显式指定为 PDF 类型，即使文件名没有扩展名
         result = client.document.parse_to_md_binary(
@@ -663,7 +757,10 @@ class TestDocumentInputTypeAutoDetection:
             input_type="pdf"  # 显式指定类型
         )
         
-        assert "filename" in result
+        # 验证解析结果
+        assert "content" in result, "Result should contain 'content' field"
+        assert len(result["content"]) > 0, "Content should not be empty"
+        assert isinstance(result["content"], str), "Content should be a string"
     
     def test_explicit_input_type_html(self, client: PowerRAGClient):
         """测试显式指定 input_type='html'"""
@@ -676,8 +773,8 @@ class TestDocumentInputTypeAutoDetection:
             input_type="html"  # 显式指定类型
         )
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_upload_with_auto_detection(self, client: PowerRAGClient, tmp_path):
         """测试 parse_to_md_upload 方法的自动检测功能"""
@@ -689,9 +786,8 @@ class TestDocumentInputTypeAutoDetection:
         # 使用默认的 input_type='auto'
         result = client.document.parse_to_md_upload(str(html_file))
         
-        assert "markdown" in result
-        assert "filename" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_parse_to_md_upload_with_explicit_type(self, client: PowerRAGClient, tmp_path):
         """测试 parse_to_md_upload 显式指定类型"""
@@ -705,8 +801,8 @@ class TestDocumentInputTypeAutoDetection:
             input_type="html"
         )
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_auto_detection_priority_extension_over_binary(self, client: PowerRAGClient, tmp_path):
         """测试 input_type='auto' 优先使用扩展名而非二进制检测"""
@@ -725,10 +821,9 @@ class TestDocumentInputTypeAutoDetection:
             # input_type='auto' 默认值
         )
         
-        assert "markdown" in result
-        assert result["filename"] == "priority_test.html"
+        assert "content" in result
         # 验证确实解析成功（说明使用了正确的类型）
-        assert "Priority Test" in result["markdown"] or result["markdown_length"] > 0
+        assert "Priority Test" in result["content"] or len(result["content"]) > 0
     
     def test_auto_detection_fallback_to_binary(self, client: PowerRAGClient):
         """测试扩展名不支持时，fallback 到二进制检测"""
@@ -742,8 +837,8 @@ class TestDocumentInputTypeAutoDetection:
         )
         
         # 应该能够通过二进制检测识别为 HTML
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
     
     def test_config_with_input_type(self, client: PowerRAGClient, tmp_path):
         """测试 config 中包含 input_type 参数"""
@@ -765,8 +860,8 @@ class TestDocumentInputTypeAutoDetection:
             input_type="html"
         )
         
-        assert "markdown" in result
-        assert result["markdown_length"] > 0
+        assert "content" in result
+        assert len(result["content"]) > 0
 
 
 class TestDocumentFileUrl:
@@ -793,8 +888,8 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert "markdown" in result["data"]
-        assert result["data"]["markdown_length"] > 0
+        assert "content" in result["data"]
+        assert len(result["data"]["content"]) > 0
     
     def test_parse_from_url_with_filename(self, client: PowerRAGClient):
         """测试从URL下载并指定文件名"""
@@ -819,7 +914,6 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert result["data"]["filename"] == custom_filename
     
     def test_parse_from_url_with_auto_detection(self, client: PowerRAGClient):
         """测试从URL下载，使用 input_type='auto' 自动检测"""
@@ -842,7 +936,7 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert "markdown" in result["data"]
+        assert "content" in result["data"]
     
     def test_parse_from_invalid_url(self, client: PowerRAGClient):
         """测试无效URL应返回错误"""
@@ -935,8 +1029,7 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert result["data"]["filename"] == "complete_config.html"
-        assert "markdown" in result["data"]
+        assert "content" in result["data"]
     
     def test_parse_from_url_empty_file(self, client: PowerRAGClient):
         """测试从URL下载空文件应返回错误"""

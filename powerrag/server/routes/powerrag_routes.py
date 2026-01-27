@@ -17,15 +17,20 @@
 """PowerRAG Unified API Routes"""
 
 import os
+import json
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
 from quart import Blueprint, request, jsonify, Response
 from powerrag.server.services.parse_service import PowerRAGParseService
 from powerrag.server.services.convert_service import PowerRAGConvertService
 from powerrag.server.services.split_service import PowerRAGSplitService
 from powerrag.server.services.extract_service import PowerRAGExtractService
 from powerrag.utils.api_utils import get_data_error_result
+from powerrag.utils.file_utils import detect_file_type
 from api.utils.api_utils import apikey_required
 import langextract as lx
+import requests
 
 # Import RAGFlow services for task queue integration
 from api.db.services.document_service import DocumentService
@@ -43,6 +48,114 @@ powerrag_bp = Blueprint("powerrag", __name__)
 # Get Gotenberg URL from config file (priority) or environment variable (fallback)
 gotenberg_config = get_base_config("gotenberg", {})
 GOTENBERG_URL = gotenberg_config.get("url", os.environ.get("GOTENBERG_URL", "http://localhost:3000"))
+
+# File download timeout settings (in seconds)
+DEFAULT_DOWNLOAD_TIMEOUT = int(os.environ.get("FILE_DOWNLOAD_TIMEOUT", "300"))  # 5 minutes default
+DEFAULT_HEAD_REQUEST_TIMEOUT = int(os.environ.get("FILE_HEAD_REQUEST_TIMEOUT", "30"))  # 30 seconds default
+
+# File extension to format type mapping (used across multiple endpoints)
+FILE_EXTENSION_TO_FORMAT_TYPE = {
+    'pdf': 'pdf',
+    'docx': 'office', 'doc': 'office',
+    'xlsx': 'office', 'xls': 'office',
+    'pptx': 'office', 'ppt': 'office',
+    'html': 'html', 'htm': 'html',
+    'jpg': 'image', 'jpeg': 'image',
+    'png': 'image'
+}
+
+
+def download_file_with_validation(
+    file_url: str,
+    max_file_size: int,
+    download_timeout: int = DEFAULT_DOWNLOAD_TIMEOUT,
+    head_timeout: int = DEFAULT_HEAD_REQUEST_TIMEOUT
+) -> tuple[bytes, str | None]:
+    """
+    Download file from URL with size validation and intelligent download strategy.
+    
+    This function implements a two-layer defense strategy:
+    1. HEAD request pre-check: Fast rejection for oversized files (saves bandwidth)
+    2. Intelligent download: Direct or streaming based on Content-Length availability
+    
+    Args:
+        file_url: URL of the file to download
+        max_file_size: Maximum allowed file size in bytes
+        download_timeout: Timeout for GET request in seconds
+        head_timeout: Timeout for HEAD request in seconds
+        
+    Returns:
+        tuple: (binary_content, error_message)
+            - binary_content: Downloaded file content as bytes (None if error)
+            - error_message: Error message if download failed (None if success)
+            
+    Raises:
+        requests.exceptions.RequestException: For network-related errors
+    """
+    max_size_mb = max_file_size / (1024 * 1024)
+    
+    # First, make a HEAD request to check Content-Length before downloading
+    content_length_known = False
+    verified_content_length = None
+    
+    try:
+        head_response = requests.head(file_url, timeout=head_timeout, allow_redirects=True)
+        content_length = head_response.headers.get('Content-Length')
+        
+        if content_length:
+            content_length = int(content_length)
+            if content_length > max_file_size:
+                logger.warning(f"File size {content_length} bytes exceeds limit {max_file_size} bytes")
+                return None, f"File size ({content_length / (1024 * 1024):.2f}MB) exceeds maximum allowed size ({max_size_mb:.2f}MB)"
+            logger.info(f"Content-Length check passed: {content_length} bytes")
+            content_length_known = True
+            verified_content_length = content_length
+    except requests.exceptions.RequestException as e:
+        # HEAD request failed, continue with streaming download with size checks
+        logger.info(f"HEAD request failed, will use streaming download with size checks: {e}")
+    
+    # Choose download strategy based on whether Content-Length is known
+    if content_length_known:
+        # Direct download: Content-Length verified, size is within limit
+        logger.info(f"Using direct download (Content-Length verified: {verified_content_length} bytes)")
+        response = requests.get(file_url, timeout=download_timeout)
+        response.raise_for_status()
+        binary = response.content
+        
+        # Verify actual size matches Content-Length (defense against malicious servers)
+        actual_size = len(binary)
+        if actual_size != verified_content_length:
+            logger.warning(f"Size mismatch: Content-Length={verified_content_length}, actual={actual_size}")
+            if actual_size > max_file_size:
+                return None, f"File size ({actual_size / (1024 * 1024):.2f}MB) exceeds maximum allowed size ({max_size_mb:.2f}MB)"
+        
+        logger.info(f"Successfully downloaded {actual_size} bytes")
+        return binary, None
+    else:
+        # Streaming download with size limit enforcement
+        logger.info(f"Using streaming download (Content-Length unknown, will enforce size limit during download)")
+        response = requests.get(file_url, timeout=download_timeout, stream=True)
+        response.raise_for_status()
+        
+        # Download in chunks and enforce size limit
+        downloaded_size = 0
+        chunks = []
+        chunk_size = 8192  # 8KB chunks
+        
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:
+                downloaded_size += len(chunk)
+                
+                # Check if size limit exceeded during download
+                if downloaded_size > max_file_size:
+                    logger.warning(f"Download aborted: size exceeded {max_file_size} bytes during streaming")
+                    return None, f"File size exceeds maximum allowed size ({max_size_mb:.2f}MB). Download aborted at {downloaded_size / (1024 * 1024):.2f}MB."
+                
+                chunks.append(chunk)
+        
+        binary = b''.join(chunks)
+        logger.info(f"Successfully downloaded {downloaded_size} bytes")
+        return binary, None
 
 
 # ============================================================================
@@ -727,22 +840,11 @@ async def parse_to_md(tenant_id):
         service = PowerRAGParseService(gotenberg_url=gotenberg_url)
         
         # Parse document to markdown (no chunking)
-        from pathlib import Path
         file_ext = Path(doc.name).suffix.lstrip('.').lower()
         
         # Determine format type
         # Supported: PDF, Office (doc/docx/ppt/pptx), HTML, Images (jpg/png)
-        format_type_map = {
-            'pdf': 'pdf',
-            'docx': 'office', 'doc': 'office',
-            'xlsx': 'office', 'xls': 'office',
-            'pptx': 'office', 'ppt': 'office',
-            'html': 'html', 'htm': 'html',
-            'jpg': 'image', 'jpeg': 'image',
-            'png': 'image'
-        }
-        
-        format_type = format_type_map.get(file_ext)
+        format_type = FILE_EXTENSION_TO_FORMAT_TYPE.get(file_ext)
         if not format_type:
             return jsonify({
                 "code": 400,
@@ -852,15 +954,8 @@ async def parse_to_md_async(tenant_id):
             }), 404
         
         # Determine format type
-        from pathlib import Path
         file_ext = Path(doc.name).suffix.lstrip('.').lower()
-        format_type_map = {
-            'pdf': 'pdf', 'docx': 'office', 'doc': 'office',
-            'xlsx': 'office', 'xls': 'office', 'pptx': 'office', 'ppt': 'office',
-            'html': 'html', 'htm': 'html',
-            'jpg': 'image', 'jpeg': 'image', 'png': 'image'
-        }
-        format_type = format_type_map.get(file_ext, 'pdf')
+        format_type = FILE_EXTENSION_TO_FORMAT_TYPE.get(file_ext, 'pdf')
         
         # Get task manager and service
         from powerrag.server.services.parse_to_md_task_manager import get_task_manager
@@ -974,6 +1069,8 @@ async def parse_to_md_upload(tenant_id):
     - file: File to parse (optional, required if file_url not provided)
     - file_url: URL of file to download and parse (optional, required if file not provided)
     - config: JSON string of parser config (optional)
+    - download_timeout: Timeout in seconds for file download (optional, default: 300)
+    - head_request_timeout: Timeout in seconds for HEAD request (optional, default: 30)
     
     Config parameters:
     - layout_recognize (str): mineru or dots_ocr (default: mineru)
@@ -984,16 +1081,16 @@ async def parse_to_md_upload(tenant_id):
     - to_page (int): End page number (default: 100000)
     - input_type (str): File type detection mode (default: 'auto'). Options:
         * 'auto': Try filename extension first, then auto-detect from binary if no extension (default)
-        * 'pdf', 'office', 'html', 'image': Explicit file type (bypass detection)
+        * Specific file extension: 'pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'html', 'htm', 'jpg', 'jpeg', 'png' (bypass detection)
     - filename (str): Override filename (optional, useful with file_url)
+    - max_file_size (int): Maximum file size in bytes for URL downloads (optional, 
+        default: uses DOC_MAXIMUM_SIZE from settings, typically 128MB)
     
     Response JSON:
     {
         "code": 0,
         "data": {
-            "filename": "document.pdf",
-            "markdown": "# Title\n\nContent...",
-            "markdown_length": 5000,
+            "content": "# Title\n\nContent...",
             "images": {...},
             "total_images": 2
         },
@@ -1002,19 +1099,22 @@ async def parse_to_md_upload(tenant_id):
     """
     try:
         # Parse config from JSON string if provided
-        import json
         form = await request.form
         config_str = form.get('config', '{}')
         try:
             config = json.loads(config_str)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in config parameter: {e}")
             return jsonify({
                 "code": 400,
-                "message": "Invalid JSON in config parameter"
+                "message": f"Invalid JSON in config parameter: {str(e)}"
             }), 400
         
         # Get file_url parameter
         file_url = form.get('file_url')
+        
+        # Get timeout parameters from form (optional)
+        download_timeout_str = form.get('download_timeout')
         
         # Check if file or file_url is provided
         files = await request.files
@@ -1036,15 +1136,11 @@ async def parse_to_md_upload(tenant_id):
         # Handle file upload or URL download
         if has_file:
             # Direct file upload
+            # Note: file.read() is synchronous in Quart but runs in async context.
+            # For large files, consider using streaming or async file reading in future.
             file = files['file']
             filename = file.filename
             logger.info(f"Received file upload: filename={filename}")
-            
-            if not filename:
-                return jsonify({
-                    "code": 400,
-                    "message": "Filename is required"
-                }), 400
             
             binary = file.read()
             if not binary:
@@ -1054,22 +1150,66 @@ async def parse_to_md_upload(tenant_id):
                 }), 400
         else:
             # Download from URL
-            import requests
-            from urllib.parse import urlparse
-            from pathlib import Path
+            # Get maximum file size from settings (default: 128MB or from environment)
+            max_file_size = config.get('max_file_size', settings.DOC_MAXIMUM_SIZE)
+            max_size_mb = max_file_size / (1024 * 1024)
             
-            logger.info(f"Downloading file from URL: {file_url}")
+            # Get timeout settings from form parameters with fallback to config or environment defaults
+            try:
+                download_timeout = int(download_timeout_str) if download_timeout_str else config.get('download_timeout', DEFAULT_DOWNLOAD_TIMEOUT)
+            except (ValueError, TypeError):
+                download_timeout = config.get('download_timeout', DEFAULT_DOWNLOAD_TIMEOUT)
+            
+            head_timeout = config.get('head_request_timeout', DEFAULT_HEAD_REQUEST_TIMEOUT)
+            
+            logger.info(f"Downloading file from URL: {file_url} (max size: {max_size_mb:.2f}MB, timeout: {download_timeout}s)")
             
             try:
-                response = requests.get(file_url, timeout=60)
-                response.raise_for_status()
-                binary = response.content
+                # Use the download_file_with_validation function
+                binary, error_msg = download_file_with_validation(
+                    file_url=file_url,
+                    max_file_size=max_file_size,
+                    download_timeout=download_timeout,
+                    head_timeout=head_timeout
+                )
+                
+                if error_msg:
+                    # Download failed due to size limit or other validation error
+                    return jsonify({
+                        "code": 400,
+                        "message": error_msg
+                    }), 400
+                    
+            except requests.exceptions.Timeout as e:
+                logger.error(f"Timeout downloading file from URL: {file_url}. Error: {e}")
+                return jsonify({
+                    "code": 408,
+                    "message": f"Request timeout while downloading file from URL. Please try again or increase timeout."
+                }), 408
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"Connection error downloading file from URL: {file_url}. Error: {e}")
+                return jsonify({
+                    "code": 503,
+                    "message": f"Failed to connect to file URL. Please check the URL and try again."
+                }), 503
+            except requests.exceptions.HTTPError as e:
+                logger.error(f"HTTP error downloading file from URL: {file_url}. Error: {e}")
+                return jsonify({
+                    "code": 502,
+                    "message": f"HTTP error while downloading file: {str(e)}"
+                }), 502
             except requests.exceptions.RequestException as e:
-                logger.error(f"Failed to download file from URL: {file_url}. Error: {e}")
+                logger.error(f"Request error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
                     "code": 400,
                     "message": f"Failed to download file from URL: {str(e)}"
                 }), 400
+            except Exception as e:
+                logger.error(f"Unexpected error downloading file from URL: {file_url}. Error: {e}", exc_info=True)
+                return jsonify({
+                    "code": 500,
+                    "message": f"Unexpected error while downloading file: {str(e)}"
+                }), 500
             
             if not binary:
                 return jsonify({
@@ -1096,28 +1236,17 @@ async def parse_to_md_upload(tenant_id):
         # Determine format type based on input_type
         if input_type == 'auto':
             # Auto mode: Try extension first, then binary detection
-            from pathlib import Path
             file_ext = Path(filename).suffix.lstrip('.').lower()
             
             if file_ext:
                 # Has extension, try to use it
-                format_type_map = {
-                    'pdf': 'pdf',
-                    'docx': 'office', 'doc': 'office',
-                    'xlsx': 'office', 'xls': 'office',
-                    'pptx': 'office', 'ppt': 'office',
-                    'html': 'html', 'htm': 'html',
-                    'jpg': 'image', 'jpeg': 'image',
-                    'png': 'image'
-                }
-                format_type = format_type_map.get(file_ext)
+                format_type = FILE_EXTENSION_TO_FORMAT_TYPE.get(file_ext)
                 
                 if format_type:
                     # Valid extension found
                     logger.info(f"Using filename extension: {format_type} (.{file_ext}) for file: {filename}")
                 else:
                     # Unsupported extension, try auto-detect from binary
-                    from powerrag.utils.file_utils import detect_file_type
                     format_type = detect_file_type(binary)
                     logger.info(f"Extension '{file_ext}' not supported, auto-detected from binary: {format_type} for file: {filename}")
                     
@@ -1128,7 +1257,6 @@ async def parse_to_md_upload(tenant_id):
                         }), 400
             else:
                 # No extension, auto-detect from binary content
-                from powerrag.utils.file_utils import detect_file_type
                 format_type = detect_file_type(binary)
                 logger.info(f"No extension found, auto-detected file type from binary: {format_type} for file: {filename}")
                 
@@ -1137,15 +1265,23 @@ async def parse_to_md_upload(tenant_id):
                         "code": 400,
                         "message": f"Unable to determine file type for {filename}. File has no extension and binary auto-detection failed. Please provide a file with a valid extension or specify input_type explicitly."
                     }), 400
-        elif input_type in ['pdf', 'office', 'html', 'image']:
-            # Use explicitly specified input_type
-            format_type = input_type
-            logger.info(f"Using explicit input_type: {format_type} for file: {filename}")
         else:
-            return jsonify({
-                "code": 400,
-                "message": f"Invalid input_type: {input_type}. Must be 'auto' (default), 'pdf', 'office', 'html', or 'image'."
-            }), 400
+            # input_type is a specific file extension (e.g., 'pdf', 'docx', 'html', 'jpg')
+            # Normalize to lowercase and remove leading dot if present
+            input_ext = input_type.lstrip('.').lower()
+            
+            # Map extension to format type
+            format_type = FILE_EXTENSION_TO_FORMAT_TYPE.get(input_ext)
+            
+            if format_type:
+                logger.info(f"Using explicit input_type extension: {format_type} (.{input_ext}) for file: {filename}")
+            else:
+                # Invalid extension specified
+                supported_extensions = ', '.join(sorted(set(FILE_EXTENSION_TO_FORMAT_TYPE.keys())))
+                return jsonify({
+                    "code": 400,
+                    "message": f"Invalid input_type: '{input_type}'. Must be 'auto' (default) or a specific file extension: {supported_extensions}"
+                }), 400
         
         # Create service and parse
         gotenberg_url = config.get("gotenberg_url", GOTENBERG_URL)
@@ -1163,15 +1299,25 @@ async def parse_to_md_upload(tenant_id):
         return jsonify({
             "code": 0,
             "data": {
-                "filename": filename,
-                "markdown": md_content,
-                "markdown_length": len(md_content),
+                "content": md_content,
                 "images": images,
                 "total_images": len(images)
             },
             "message": "success"
         }), 200
         
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error in parse_to_md_upload: {e}", exc_info=True)
+        return jsonify({
+            "code": 400,
+            "message": f"Invalid JSON in request: {str(e)}"
+        }), 400
+    except ValueError as e:
+        logger.error(f"Value error in parse_to_md_upload: {e}", exc_info=True)
+        return jsonify({
+            "code": 400,
+            "message": str(e)
+        }), 400
     except Exception as e:
         logger.error(f"Parse to markdown (upload) error: {e}", exc_info=True)
         return jsonify({

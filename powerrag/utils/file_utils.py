@@ -374,6 +374,8 @@ def detect_file_type(binary: bytes) -> str:
     
     # Check HTML (basic detection)
     # Try to decode as text and check for HTML markers
+    # Note: Detection is case-insensitive - works regardless of original HTML tag casing
+    # (e.g., '<HTML>', '<Html>', '<html>' are all detected)
     try:
         text_sample = binary[:1024].decode('utf-8', errors='ignore').lower()
         if '<html' in text_sample or '<!doctype html' in text_sample or '<head' in text_sample:

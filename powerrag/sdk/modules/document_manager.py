@@ -695,9 +695,7 @@ class DocumentManager:
         
         Returns:
             解析结果字典，包含以下字段：
-            - filename: 文件名
-            - markdown: Markdown 内容
-            - markdown_length: Markdown 长度
+            - content: Markdown 内容
             - images: 图片字典
             - total_images: 图片总数
         
@@ -710,14 +708,14 @@ class DocumentManager:
             >>> result = doc_manager.parse_to_md_upload(
             ...     file_path="document.pdf"
             ... )
-            >>> print(result['markdown'])
+            >>> print(result['content'])
             >>> 
             >>> # 对于无扩展名文件，input_type='auto' 会自动从二进制内容识别
             >>> result = doc_manager.parse_to_md_upload(
             ...     file_path="document_no_ext"
             ...     # input_type='auto' 是默认值，可以省略
             ... )
-            >>> print(result['markdown'])
+            >>> print(result['content'])
             >>> 
             >>> # 显式指定文件类型（跳过自动识别）
             >>> result = doc_manager.parse_to_md_upload(
@@ -769,9 +767,7 @@ class DocumentManager:
         
         Returns:
             解析结果字典，包含以下字段：
-            - filename: 文件名
-            - markdown: Markdown 内容
-            - markdown_length: Markdown 长度
+            - content: Markdown 内容
             - images: 图片字典 (base64)
             - total_images: 图片总数
         
@@ -787,7 +783,7 @@ class DocumentManager:
             ...     file_binary=file_binary,
             ...     filename="document.pdf"
             ... )
-            >>> print(result['markdown'])
+            >>> print(result['content'])
             >>> 
             >>> # 对于无扩展名的二进制数据，input_type='auto' 会自动识别
             >>> result = doc_manager.parse_to_md_binary(
@@ -795,7 +791,7 @@ class DocumentManager:
             ...     filename="document"  # 无扩展名
             ...     # input_type='auto' 是默认值
             ... )
-            >>> print(result['markdown'])
+            >>> print(result['content'])
             >>> 
             >>> # 显式指定文件类型（跳过自动识别）
             >>> result = doc_manager.parse_to_md_binary(

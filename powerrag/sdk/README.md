@@ -124,6 +124,9 @@ result = client.document.parse_to_md_upload(
     "document.pdf",
     config={"layout_recognize": "mineru"}
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
+print(result['total_images'])  # 图片总数
 
 # 从 URL 下载并解析（直接调用 API）
 import requests
@@ -138,6 +141,9 @@ response = requests.post(
     }
 )
 result = response.json()
+# 访问返回结果
+print(result['data']['content'])  # Markdown 内容
+print(result['data']['total_images'])  # 图片总数
 
 # 使用二进制数据解析（支持无扩展名文件）
 with open("document.pdf", "rb") as f:
@@ -148,6 +154,8 @@ result = client.document.parse_to_md_binary(
     filename="document.pdf",  # 有扩展名时自动识别
     config={"layout_recognize": "mineru"}
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
 # 对于无扩展名的文件，使用 input_type='auto' 自动识别
 result = client.document.parse_to_md_binary(
@@ -155,13 +163,17 @@ result = client.document.parse_to_md_binary(
     filename="document_no_extension",  # 无扩展名
     # input_type='auto' 是默认值，会自动从二进制内容检测文件类型
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
-# 或显式指定文件类型
+# 或显式指定文件类型（使用具体扩展名）
 result = client.document.parse_to_md_binary(
     file_binary=binary_data,
     filename="document",
-    input_type="pdf"  # 强制作为 PDF 处理
+    input_type="pdf"  # 具体扩展名: 'pdf', 'docx', 'html', 'jpg' 等
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 ```
 
 ### 检索
@@ -236,13 +248,20 @@ result = client.document.parse_to_md_binary(
     file_binary=binary_data,
     filename="document_no_extension"  # 无扩展名也可以
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
 # 或显式指定类型
 result = client.document.parse_to_md_binary(
     file_binary=binary_data,
     filename="document",
-    input_type="pdf"  # 'pdf', 'office', 'html', 'image'
+    input_type="pdf"  # 具体扩展名: 'pdf', 'docx', 'html', 'jpg' 等
 )
+
+# 访问返回结果
+print(result['content'])  # Markdown 内容
+print(result['total_images'])  # 图片总数
+print(result['images'])  # 图片字典
 ```
 
 **配置选项：**
@@ -253,7 +272,7 @@ result = client.document.parse_to_md_binary(
 - `from_page`/`to_page`: PDF 页面范围
 - `input_type`: 文件类型识别模式（默认: `'auto'`）
   - `'auto'`: 优先使用文件扩展名，无扩展名时自动检测（推荐）
-  - `'pdf'`, `'office'`, `'html'`, `'image'`: 显式指定文件类型
+  - 具体文件扩展名: `'pdf'`, `'docx'`, `'doc'`, `'xlsx'`, `'xls'`, `'pptx'`, `'ppt'`, `'html'`, `'htm'`, `'jpg'`, `'jpeg'`, `'png'` - 显式指定文件扩展名
 
 ### 结构化信息抽取
 
@@ -410,6 +429,8 @@ result = client.document.wait_for_parse_to_md(task_id, timeout=300)
 
 # 上传并解析为 Markdown（无需知识库）
 result = client.document.parse_to_md_upload("file.pdf", config={...})
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
 # 使用 file_url 参数从 URL 下载并解析（直接调用 API）
 import requests
@@ -427,6 +448,8 @@ response = requests.post(
     }
 )
 result = response.json()
+# 访问返回结果
+print(result['data']['content'])  # Markdown 内容
 
 # 使用 file_url 并指定文件名
 response = requests.post(
@@ -441,6 +464,9 @@ response = requests.post(
         })
     }
 )
+result = response.json()
+# 访问返回结果
+print(result['data']['content'])  # Markdown 内容
 
 # 使用二进制数据解析为 Markdown
 with open("document.pdf", "rb") as f:
@@ -452,6 +478,8 @@ result = client.document.parse_to_md_binary(
     config={"layout_recognize": "mineru"},
     input_type="auto"  # 默认值，自动识别文件类型
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
 # 无扩展名文件解析（自动检测文件类型）
 result = client.document.parse_to_md_binary(
@@ -459,6 +487,8 @@ result = client.document.parse_to_md_binary(
     filename="document_no_extension",  # 无扩展名
     # input_type='auto' 会从二进制内容自动检测 PDF/Office/HTML 等
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
 # 显式指定文件类型（跳过自动检测）
 result = client.document.parse_to_md_binary(
@@ -466,6 +496,8 @@ result = client.document.parse_to_md_binary(
     filename="document",
     input_type="pdf"  # 强制作为 PDF 处理
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 
 # 解析URL文档（同步等待）
 doc = client.document.parse_url(
@@ -1184,11 +1216,13 @@ result = client.document.parse_to_md_binary(
     filename="document_no_extension"
     # input_type='auto' 是默认值，可以省略
 )
+# 访问返回结果
+print(result['content'])  # Markdown 内容
 ```
 
 支持的 `input_type` 值：
 - `'auto'` (默认): 优先使用文件扩展名，无扩展名或不支持时从二进制内容自动检测
-- `'pdf'`, `'office'`, `'html'`, `'image'`: 显式指定文件类型
+- 具体文件扩展名: `'pdf'`, `'docx'`, `'doc'`, `'xlsx'`, `'xls'`, `'pptx'`, `'ppt'`, `'html'`, `'htm'`, `'jpg'`, `'jpeg'`, `'png'` - 显式指定文件扩展名
 
 ### Q: 如何从URL直接解析文件？
 
@@ -1212,7 +1246,7 @@ response = requests.post(
     }
 )
 result = response.json()
-print(result['data']['markdown'])
+print(result['data']['content'])
 ```
 
 **方式 2：指定文件名（适用于无扩展名URL）**
@@ -1224,7 +1258,7 @@ response = requests.post(
         "file_url": "https://api.example.com/download?id=123",
         "config": json.dumps({
             "filename": "report.pdf",  # 覆盖文件名
-            "input_type": "pdf",  # 显式指定类型
+            "input_type": "pdf",  # 显式指定文件扩展名
             "layout_recognize": "mineru",
             "enable_table": True
         })
@@ -1249,6 +1283,10 @@ response = requests.post(
         "config": json.dumps({"layout_recognize": "mineru"})
     }
 )
+result = response.json()
+# 访问返回结果
+print(result['data']['content'])  # Markdown 内容
+print(result['data']['total_images'])  # 图片总数
 ```
 
 **配置参数说明：**
@@ -1256,7 +1294,7 @@ response = requests.post(
 - `config.filename` (str): 自定义文件名（可选，不提供则从 URL 提取）
 - `config.input_type` (str): 文件类型检测模式
   - `'auto'` (默认): 优先使用扩展名，无扩展名时自动检测
-  - `'pdf'`, `'office'`, `'html'`, `'image'`: 显式指定类型
+  - 具体文件扩展名: `'pdf'`, `'docx'`, `'doc'`, `'xlsx'`, `'xls'`, `'pptx'`, `'ppt'`, `'html'`, `'htm'`, `'jpg'`, `'jpeg'`, `'png'` - 显式指定文件扩展名
 - `config.layout_recognize` (str): 布局识别引擎（`'mineru'` 或 `'dots_ocr'`）
 - 其他解析配置参数同 `parse_to_md` 方法
 
