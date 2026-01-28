@@ -14,7 +14,8 @@
 #  limitations under the License.
 #
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
+from pathlib import Path
 from .chunk import ChunkInfo
 
 
@@ -266,6 +267,171 @@ class ChunkManager:
         
         if res_json.get("code") != 0:
             raise Exception(res_json.get("message", "Split text failed"))
+        
+        return res_json.get("data", {})
+    
+    def split_file(
+        self,
+        file_path: Optional[str] = None,
+        file_url: Optional[str] = None,
+        parser_id: str = "naive",
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        文件切片（支持所有ParserType方法）
+        
+        支持三种方式：
+        1. 本地文件路径：file_path
+        2. 文件URL：file_url
+        3. 文件上传：使用 split_file_upload 方法
+        
+        Args:
+            file_path: 本地文件路径（可选，与file_url二选一）
+            file_url: 文件URL（可选，与file_path二选一）
+            parser_id: 解析器ID，支持所有ParserType：
+                - naive, qa, book, laws, paper, manual, presentation
+                - table, resume, picture, one, audio, email, tag
+                - knowledge_graph, title, regex, smart
+                默认"naive"
+            config: 解析配置（可选）
+                - chunk_token_num: 目标分块大小（tokens），默认512
+                - delimiter: 分隔符字符串，默认"\n。.；;！!？？"
+                - lang: 语言，默认"Chinese"
+                - from_page: 起始页码，默认0
+                - to_page: 结束页码，默认100000
+                - max_file_size: URL下载的最大文件大小（字节）
+                - download_timeout: 下载超时时间（秒）
+                - head_request_timeout: HEAD请求超时时间（秒）
+        
+        Returns:
+            切片结果，包含chunks列表、total_chunks数量和filename
+        
+        Raises:
+            Exception: API调用失败
+            ValueError: file_path和file_url都未提供
+        
+        Example:
+            ```python
+            # 使用本地文件路径
+            result = client.chunk.split_file(
+                file_path="/path/to/document.pdf",
+                parser_id="book",
+                config={"chunk_token_num": 512}
+            )
+            
+            # 使用文件URL
+            result = client.chunk.split_file(
+                file_url="https://example.com/doc.pdf",
+                parser_id="naive",
+                config={"chunk_token_num": 256}
+            )
+            ```
+        """
+        if not file_path and not file_url:
+            raise ValueError("Either file_path or file_url must be provided")
+        
+        payload = {
+            "parser_id": parser_id,
+        }
+        
+        if file_path:
+            payload["file_path"] = file_path
+        if file_url:
+            payload["file_url"] = file_url
+        
+        if config:
+            payload["config"] = config
+        
+        url = "/powerrag/split/file"
+        res = self.client.post(url, json=payload)
+        
+        # 检查响应状态码
+        if res.status_code != 200:
+            try:
+                error_json = res.json()
+                error_msg = error_json.get("message", f"HTTP {res.status_code}")
+            except Exception:
+                error_msg = f"HTTP {res.status_code}: {res.text[:200]}"
+            raise Exception(error_msg)
+        
+        res_json = res.json()
+        
+        if res_json.get("code") != 0:
+            raise Exception(res_json.get("message", "Split file failed"))
+        
+        return res_json.get("data", {})
+    
+    def split_file_upload(
+        self,
+        file_path: Union[str, Path],
+        parser_id: str = "naive",
+        config: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        上传文件并切片（支持所有ParserType方法）
+        
+        Args:
+            file_path: 本地文件路径
+            parser_id: 解析器ID，支持所有ParserType，默认"naive"
+            config: 解析配置（可选）
+                - chunk_token_num: 目标分块大小（tokens），默认512
+                - delimiter: 分隔符字符串，默认"\n。.；;！!？？"
+                - lang: 语言，默认"Chinese"
+                - from_page: 起始页码，默认0
+                - to_page: 结束页码，默认100000
+        
+        Returns:
+            切片结果，包含chunks列表、total_chunks数量和filename
+        
+        Raises:
+            Exception: API调用失败
+            FileNotFoundError: 文件不存在
+        
+        Example:
+            ```python
+            result = client.chunk.split_file_upload(
+                file_path="/path/to/document.pdf",
+                parser_id="book",
+                config={"chunk_token_num": 512}
+            )
+            print(f"Total chunks: {result['total_chunks']}")
+            for chunk in result['chunks']:
+                print(chunk)
+            ```
+        """
+        path = Path(file_path)
+        if not path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        # 准备文件
+        with open(path, "rb") as f:
+            files = [("file", (path.name, f.read()))]
+        
+        # 准备表单数据
+        form_data = {
+            "parser_id": parser_id,
+        }
+        
+        if config:
+            import json
+            form_data["config"] = json.dumps(config)
+        
+        url = "/powerrag/split/file/upload"
+        res = self.client.post(url, json=None, files=files, data=form_data)
+        
+        # 检查响应状态码
+        if res.status_code != 200:
+            try:
+                error_json = res.json()
+                error_msg = error_json.get("message", f"HTTP {res.status_code}")
+            except Exception:
+                error_msg = f"HTTP {res.status_code}: {res.text[:200]}"
+            raise Exception(error_msg)
+        
+        res_json = res.json()
+        
+        if res_json.get("code") != 0:
+            raise Exception(res_json.get("message", "Split file upload failed"))
         
         return res_json.get("data", {})
 

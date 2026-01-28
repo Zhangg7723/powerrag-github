@@ -50,12 +50,13 @@ class PowerRAGSplitService:
     def __init__(self):
         # 初始化时动态导入chunker，避免循环导入
         self._init_chunker_factory()
+        self._init_file_chunker_factory()
 
     def _init_chunker_factory(self):
         """动态导入chunker模块，避免循环导入"""
         global CHUNKER_FACTORY
         if not CHUNKER_FACTORY:
-            # 直接引用同一模块中定义的函数
+            # PowerRAG 专门的 chunker（仅支持文本切分）
             CHUNKER_FACTORY.update({
                 ParserType.TITLE.value: title_based_chunking,  # PowerRAG Title Chunker
                 ParserType.REGEX.value: regex_based_chunking,  # PowerRAG regex Chunker
@@ -158,9 +159,14 @@ class PowerRAGSplitService:
                 # Smart chunking returns a list of chunks directly
                 chunks = chunker(text, parser_config=parser_config)
             else:
-                # Use config as-is for other parsers
-                chunks=[]
-                raise ValueError(f"Chunker not found for parser_id: {parser_id}")
+                # Other parser types (naive, qa, book, laws, etc.) are not supported for text splitting
+                # Use split_file method instead for file-based chunking
+                raise ValueError(
+                    f"Parser '{parser_id}' is not supported for text splitting. "
+                    f"Supported parsers for text splitting are: {ParserType.TITLE.value}, "
+                    f"{ParserType.REGEX.value}, {ParserType.SMART.value}. "
+                    f"For other parser types, please use split_file() method instead."
+                )
 
             # Ensure all chunks are strings and handle encoding
             processed_chunks = []
@@ -194,6 +200,169 @@ class PowerRAGSplitService:
 
         except Exception as e:
             logger.error(f"Error splitting text with parser '{parser_id}': {e}", exc_info=True)
+            raise
+
+    def _init_file_chunker_factory(self):
+        """初始化文件 chunker factory，映射 ParserType 到 rag/app 模块"""
+        # 延迟导入，避免循环导入
+        if not hasattr(self, '_file_chunker_factory'):
+            self._file_chunker_factory = {}
+            try:
+                # 导入 rag/app 模块
+                from rag.app import (
+                    laws, paper, presentation, manual, qa, table, book, resume,
+                    picture, naive, one, audio, email, tag
+                )
+                # 导入 powerrag/app 模块
+                from powerrag.app import title as powerrag_title, regex as powerrag_regex, smart as powerrag_smart
+                
+                # 映射 ParserType 到对应的 chunk 模块
+                self._file_chunker_factory = {
+                    ParserType.NAIVE.value: naive,
+                    ParserType.PAPER.value: paper,
+                    ParserType.BOOK.value: book,
+                    ParserType.PRESENTATION.value: presentation,
+                    ParserType.MANUAL.value: manual,
+                    ParserType.LAWS.value: laws,
+                    ParserType.QA.value: qa,
+                    ParserType.TABLE.value: table,
+                    ParserType.RESUME.value: resume,
+                    ParserType.PICTURE.value: picture,
+                    ParserType.ONE.value: one,
+                    ParserType.EMAIL.value: email,
+                    ParserType.KG.value: naive,  # knowledge_graph 使用 naive
+                    ParserType.TAG.value: tag,
+                    ParserType.TITLE.value: powerrag_title,  # PowerRAG Title Parser
+                    ParserType.REGEX.value: powerrag_regex,  # PowerRAG Regex Parser
+                    ParserType.SMART.value: powerrag_smart,  # PowerRAG Smart Parser
+                }
+            except ImportError as e:
+                logger.warning(f"Failed to import some rag/app modules: {e}")
+                # 如果导入失败，至少提供基本的 naive chunker
+                try:
+                    from rag.app import naive
+                    self._file_chunker_factory = {ParserType.NAIVE.value: naive}
+                except ImportError:
+                    logger.error("Failed to import naive chunker, file splitting will not work")
+                    self._file_chunker_factory = {}
+
+    def split_file(self, filename: str = None, binary: bytes = None, parser_id: str = "naive", 
+                   config: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Split file into chunks using rag/app chunking methods
+        
+        Args:
+            filename: File path (optional if binary is provided)
+            binary: File binary content (optional if filename is provided)
+            parser_id: Parser/chunker ID (e.g., "naive", "book", "title")
+            config: Chunking configuration (optional)
+            
+        Returns:
+            Dict containing chunks and metadata
+            
+        Example:
+            ```python
+            service = PowerRAGSplitService()
+            
+            # Using file path
+            result = service.split_file(
+                filename="/path/to/document.pdf",
+                parser_id="book",
+                config={"chunk_token_num": 512}
+            )
+            
+            # Using binary
+            with open("document.pdf", "rb") as f:
+                binary = f.read()
+            result = service.split_file(
+                filename="document.pdf",
+                binary=binary,
+                parser_id="naive",
+                config={"chunk_token_num": 256}
+            )
+            ```
+        """
+        if not filename and not binary:
+            raise ValueError("Either filename or binary must be provided")
+        
+        if filename and not binary:
+            # Read file from path
+            with open(filename, "rb") as f:
+                binary = f.read()
+        
+        if not filename:
+            # Generate a temporary filename from binary or use default
+            filename = "temp_file"
+        
+        if config is None:
+            config = {}
+        
+        # Get chunker module
+        chunker_module = self._file_chunker_factory.get(parser_id.lower())
+        if not chunker_module:
+            logger.warning(f"Chunker '{parser_id}' not found in file chunker factory, using naive")
+            chunker_module = self._file_chunker_factory.get(ParserType.NAIVE.value)
+            if not chunker_module:
+                raise ValueError(f"Chunker '{parser_id}' not found and naive chunker not available")
+        
+        # Prepare callback
+        def dummy(prog=None, msg=""):
+            """Dummy callback for progress"""
+            pass
+        
+        # Build parser_config from config
+        parser_config = config.copy()
+        parser_config.setdefault("chunk_token_num", 512)
+        parser_config.setdefault("delimiter", "\n。.；;！!？？")
+        
+        # Build kwargs
+        kwargs = {
+            "lang": config.get("lang", "Chinese"),
+            "callback": dummy,
+            "parser_config": parser_config,
+            "from_page": config.get("from_page", 0),
+            "to_page": config.get("to_page", 100000),
+        }
+        
+        # Add optional fields
+        if config.get("tenant_id"):
+            kwargs["tenant_id"] = config["tenant_id"]
+        if config.get("kb_id"):
+            kwargs["kb_id"] = config["kb_id"]
+        if config.get("doc_id"):
+            kwargs["doc_id"] = config["doc_id"]
+        
+        try:
+            # Call chunk function
+            logger.info(f"Calling chunk function for parser '{parser_id}' on file '{filename}'")
+            tokenized_chunks = chunker_module.chunk(filename, binary=binary, **kwargs)
+            
+            # Extract text content from tokenized chunks
+            chunks = []
+            for chunk_dict in tokenized_chunks:
+                if isinstance(chunk_dict, dict):
+                    # Extract content_with_weight or content field
+                    content = chunk_dict.get("content_with_weight") or chunk_dict.get("content", "")
+                    if content:
+                        chunks.append(content)
+                elif isinstance(chunk_dict, str):
+                    chunks.append(chunk_dict)
+            
+            logger.info(f"Split file '{filename}' with parser '{parser_id}': {len(chunks)} chunks")
+            
+            return {
+                "parser_id": parser_id,
+                "chunks": chunks,
+                "total_chunks": len(chunks),
+                "filename": filename,
+                "metadata": {
+                    "chunker": "rag/app",
+                    "config": config
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error splitting file '{filename}' with parser '{parser_id}': {e}", exc_info=True)
             raise
 
 

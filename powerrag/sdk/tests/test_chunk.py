@@ -156,8 +156,63 @@ class TestChunkSplitText:
         text = "This is a test document with multiple paragraphs."
         result = client.chunk.split_text(
             text=text,
-            parser_id="naive",
+            parser_id="regex",
             config={"chunk_token_num": 128}
         )
         assert "chunks" in result or "total_chunks" in result
+    
+    def test_split_text_unsupported_parser(self, client: PowerRAGClient):
+        """测试不支持的parser_id应该抛出错误"""
+        text = "Test text"
+        # 使用一个真正不支持的 parser_id（如 "paper"）
+        # 注意：naive 实际上是被支持的（通过 RAGFlow 代理）
+        with pytest.raises(Exception) as exc_info:
+            client.chunk.split_text(
+                text=text,
+                parser_id="paper",  # paper 不支持纯文本切片，需要文件处理
+                config={"chunk_token_num": 128}
+            )
+        assert "not supported" in str(exc_info.value).lower() or "unknown" in str(exc_info.value).lower() or "failed" in str(exc_info.value).lower()
+
+
+class TestChunkSplitFile:
+    """测试文件切片"""
+    
+    def test_split_file_upload(self, client: PowerRAGClient, test_file_path: str):
+        """测试上传文件并切片"""
+        result = client.chunk.split_file_upload(
+            file_path=test_file_path,
+            parser_id="naive",
+            config={"chunk_token_num": 512}
+        )
+        assert "chunks" in result
+        assert "total_chunks" in result
+        assert "filename" in result
+        assert isinstance(result["chunks"], list)
+        assert result["total_chunks"] >= 0
+    
+    def test_split_file_upload_with_different_parsers(self, client: PowerRAGClient, test_file_path: str):
+        """测试使用不同parser_id的文件切片"""
+        parsers = ["naive", "book", "title"]
+        for parser_id in parsers:
+            try:
+                result = client.chunk.split_file_upload(
+                    file_path=test_file_path,
+                    parser_id=parser_id,
+                    config={"chunk_token_num": 256}
+                )
+                assert "chunks" in result
+                assert result["total_chunks"] >= 0
+            except Exception as e:
+                # 某些parser可能不支持特定文件类型，这是正常的
+                if "not supported" not in str(e).lower():
+                    raise
+    
+    def test_split_file_upload_nonexistent_file(self, client: PowerRAGClient):
+        """测试不存在的文件应该抛出错误"""
+        with pytest.raises(FileNotFoundError):
+            client.chunk.split_file_upload(
+                file_path="/nonexistent/file.pdf",
+                parser_id="naive"
+            )
 

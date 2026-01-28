@@ -290,14 +290,123 @@ status = client.extraction.get_struct_extract_status(task['task_id'])
 
 ### 文本切片
 
-无需上传文档即可对文本进行切片：
+无需上传文档即可对文本进行切片。
+
+**注意**: `split_text` 方法仅支持以下三种解析器：
+- `title`: 基于标题的切片
+- `regex`: 基于正则表达式的切片
+- `smart`: 智能切片
+
+对于其他解析器（如 `naive`, `book`, `qa` 等），请使用 `split_file` 或 `split_file_upload` 方法。
 
 ```python
+# 使用 title 解析器
 result = client.chunk.split_text(
     text="# Title\n\nContent...",
     parser_id="title",
     config={"chunk_token_num": 512}
 )
+
+# 使用 regex 解析器
+result = client.chunk.split_text(
+    text="Section 1\n\nContent...",
+    parser_id="regex",
+    config={
+        "chunk_token_num": 256,
+        "regex_pattern": r"Section \d+"
+    }
+)
+
+# 使用 smart 解析器
+result = client.chunk.split_text(
+    text="Long text content...",
+    parser_id="smart",
+    config={"chunk_token_num": 512}
+)
+
+print(f"Total chunks: {result['total_chunks']}")
+for chunk in result['chunks']:
+    print(chunk)
+```
+
+### 文件切片
+
+文件切片支持所有 ParserType 方法，提供三种使用方式：
+
+#### 方式 1: 使用本地文件路径
+
+```python
+result = client.chunk.split_file(
+    file_path="/path/to/document.pdf",
+    parser_id="book",  # 支持所有 ParserType
+    config={
+        "chunk_token_num": 512,
+        "delimiter": "\n。.；;！!？？",
+        "lang": "Chinese",
+        "from_page": 0,
+        "to_page": 100000
+    }
+)
+```
+
+#### 方式 2: 使用文件 URL
+
+```python
+result = client.chunk.split_file(
+    file_url="https://example.com/doc.pdf",
+    parser_id="naive",
+    config={
+        "chunk_token_num": 256,
+        "max_file_size": 128 * 1024 * 1024,  # 128MB
+        "download_timeout": 300,  # 5分钟
+        "head_request_timeout": 30  # 30秒
+    }
+)
+```
+
+#### 方式 3: 上传文件并切片
+
+```python
+result = client.chunk.split_file_upload(
+    file_path="/path/to/document.pdf",
+    parser_id="book",
+    config={
+        "chunk_token_num": 512,
+        "delimiter": "\n。.；;！!？？",
+        "lang": "Chinese"
+    }
+)
+
+print(f"Total chunks: {result['total_chunks']}")
+print(f"Filename: {result['filename']}")
+for chunk in result['chunks']:
+    print(chunk)
+```
+
+**支持的 ParserType 方法：**
+- 基础方法: `naive`, `title`, `regex`, `smart`
+- 专业方法: `qa`, `book`, `laws`, `paper`, `manual`, `presentation`
+- 特殊格式: `table`, `resume`, `picture`, `one`, `email`
+- 高级方法: `knowledge_graph`
+
+**配置参数说明：**
+- `chunk_token_num` (int): 目标分块大小（tokens），默认 512
+- `delimiter` (str): 分隔符字符串，默认 `"\n。.；;！!？？"`
+- `lang` (str): 语言，默认 `"Chinese"`
+- `from_page` (int): PDF 起始页码，默认 0
+- `to_page` (int): PDF 结束页码，默认 100000
+- `max_file_size` (int): URL 下载的最大文件大小（字节），仅用于 `file_url` 方式
+- `download_timeout` (int): 下载超时时间（秒），仅用于 `file_url` 方式
+- `head_request_timeout` (int): HEAD 请求超时时间（秒），仅用于 `file_url` 方式
+
+**返回值结构：**
+```python
+{
+    "parser_id": "book",
+    "chunks": ["chunk1", "chunk2", ...],  # 字符串列表
+    "total_chunks": 10,
+    "filename": "document.pdf"
+}
 ```
 
 ## 核心模块
@@ -558,15 +667,49 @@ client.chunk.delete(kb_id, doc_id, [chunk_id])
 # 删除文档的所有切片
 client.chunk.delete(kb_id, doc_id, None)
 
-# 文本切片（无需上传文档）
+# 文本切片（仅支持 title, regex, smart）
 result = client.chunk.split_text(
     text="# Title\n\nLong text to be chunked...",
-    parser_id="title",  # 解析器ID
-    config={"chunk_token_num": 512}  # 自定义配置
+    parser_id="title",  # 仅支持: title, regex, smart
+    config={"chunk_token_num": 512}
 )
 print(f"Total chunks: {result['total_chunks']}")
 for chunk in result['chunks']:
-    print(chunk['content'])
+    print(chunk)
+
+# 文件切片（支持所有ParserType方法）
+# 方式1: 使用本地文件路径
+result = client.chunk.split_file(
+    file_path="/path/to/document.pdf",
+    parser_id="book",  # 支持所有 ParserType
+    config={
+        "chunk_token_num": 512,
+        "delimiter": "\n。.；;！!？？",
+        "lang": "Chinese"
+    }
+)
+
+# 方式2: 使用文件URL
+result = client.chunk.split_file(
+    file_url="https://example.com/doc.pdf",
+    parser_id="naive",
+    config={
+        "chunk_token_num": 256,
+        "max_file_size": 128 * 1024 * 1024,  # 128MB
+        "download_timeout": 300
+    }
+)
+
+# 方式3: 上传文件并切片
+result = client.chunk.split_file_upload(
+    file_path="/path/to/document.pdf",
+    parser_id="book",
+    config={"chunk_token_num": 512}
+)
+print(f"Total chunks: {result['total_chunks']}")
+print(f"Filename: {result['filename']}")
+for chunk in result['chunks']:
+    print(chunk)
 ```
 
 ### 4. 信息抽取 (Extraction)
@@ -894,6 +1037,7 @@ SDK 包含完整的测试套件，覆盖所有功能模块。
 # 设置环境变量
 export HOST_ADDRESS="http://127.0.0.1:9380"
 export POWERRAG_API_KEY="your-api-key"
+export PYTHONPATH=$(pwd)
 
 # 运行测试
 pytest powerrag/sdk/tests/
@@ -1201,6 +1345,47 @@ for result in results:
     if result['status'] == 'FAIL':
         print(f"Document {result['doc_id']} failed to parse")
         # 重新解析或删除
+```
+
+### Q: 文本切片和文件切片有什么区别？应该使用哪个？
+
+A: 
+- **`split_text`**: 仅支持 `title`, `regex`, `smart` 三种解析器，适用于纯文本内容（Markdown格式）
+- **`split_file`**: 支持所有 ParserType 方法，适用于文件（通过路径或URL）
+- **`split_file_upload`**: 支持所有 ParserType 方法，适用于文件上传
+
+**使用建议：**
+- 如果只有文本内容且需要使用 `title`/`regex`/`smart`，使用 `split_text`
+- 如果有文件且需要使用其他解析器（如 `book`, `qa`, `naive` 等），使用 `split_file` 或 `split_file_upload`
+- 如果文件在本地，使用 `split_file(file_path=...)` 或 `split_file_upload`
+- 如果文件在远程URL，使用 `split_file(file_url=...)`
+
+**示例：**
+```python
+# 文本切片（仅支持 title, regex, smart）
+result = client.chunk.split_text(
+    text="# Title\n\nContent...",
+    parser_id="title"
+)
+
+# 文件切片（支持所有解析器）
+# 本地文件
+result = client.chunk.split_file(
+    file_path="/path/to/doc.pdf",
+    parser_id="book"  # 可以使用任何解析器
+)
+
+# 远程文件
+result = client.chunk.split_file(
+    file_url="https://example.com/doc.pdf",
+    parser_id="naive"
+)
+
+# 文件上传
+result = client.chunk.split_file_upload(
+    file_path="/path/to/doc.pdf",
+    parser_id="qa"
+)
 ```
 
 ### Q: 如何解析无扩展名的文件？

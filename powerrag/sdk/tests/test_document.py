@@ -217,13 +217,18 @@ class TestDocumentParse:
     
     def test_cancel_parse(self, client: PowerRAGClient, kb_id: str, test_file_path: str):
         """测试取消解析"""
+        import time
         uploaded_docs = client.document.upload(kb_id, test_file_path)
         doc_id = uploaded_docs[0]["id"]
         
         try:
             client.document.parse_to_chunk(kb_id, [doc_id], wait=False)
+            # Wait a bit for parsing to start
+            time.sleep(0.5)
             client.document.cancel_parse(kb_id, [doc_id])
             
+            # Wait a bit for status update
+            time.sleep(0.5)
             doc = client.document.get(kb_id, doc_id)
             assert doc["run"] in ["CANCEL", "UNSTART"]
         finally:
