@@ -284,6 +284,8 @@ export default {
       profile: 'Perfil',
       avatar: 'Avatar',
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
+      dingtalk_kbDescription:
+        'Conecta tu base de conocimiento de DingTalk para importar documentos.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
       maxTokensTip:
