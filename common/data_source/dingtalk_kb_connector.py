@@ -2,7 +2,7 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Generator
+from typing import Any
 
 from alibabacloud_aliding20230426.client import Client as AlidingClient
 from alibabacloud_aliding20230426 import models as aliding_models
