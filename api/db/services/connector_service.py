@@ -250,16 +250,17 @@ class SyncLogsService(CommonService):
                     return [], []
 
         errs = []
-        files = [FileObj(filename=build_filename(d), blob=d["blob"]) for d in docs]
+        doc_items = [(d, build_filename(d)) for d in docs]
+        files = [FileObj(filename=filename, blob=doc["blob"]) for doc, filename in doc_items]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
 
         # Create a mapping from filename to metadata for later use
         metadata_map = {}
-        for d in docs:
-            if d.get("metadata"):
-                metadata_map[build_filename(d)] = d["metadata"]
+        for doc, filename in doc_items:
+            if doc.get("metadata"):
+                metadata_map[filename] = doc["metadata"]
 
         kb_table_num_map = {}
         for doc, _ in doc_blob_pairs:
