@@ -58,7 +58,7 @@ class DocumentSource(str, Enum):
     GITHUB = "github"
     GITLAB = "gitlab"
     IMAP = "imap"
-    DINGTALK_KB = "dingtalk_kb"
+    ALIDING_KB = "aliding_kb"
 
     
 class FileOrigin(str, Enum):

@@ -217,14 +217,14 @@ class SyncLogsService(CommonService):
                 name = f"{name}{extension}"
             return name
 
-        if src.startswith(f"{FileSource.DINGTALK_KB}/"):
+        if src.startswith(f"{FileSource.ALIDING_KB}/"):
             existing_map: dict[str, str] = {}
             query = Document.select(Document.id, Document.meta_fields).where(
                 (Document.kb_id == kb.id) & (Document.source_type == src)
             )
             for row in query:
                 meta = row.meta_fields or {}
-                key = meta.get("dingtalk_doc_id") or meta.get("url")
+                key = meta.get("aliding_doc_id") or meta.get("dingtalk_doc_id") or meta.get("url")
                 if key:
                     existing_map[str(key)] = row.id
 
@@ -234,7 +234,7 @@ class SyncLogsService(CommonService):
                 doc_ids_to_delete: list[str] = []
                 for d in docs:
                     meta = d.get("metadata") or {}
-                    key = meta.get("dingtalk_doc_id") or meta.get("url")
+                    key = meta.get("aliding_doc_id") or meta.get("dingtalk_doc_id") or meta.get("url")
                     key = str(key) if key else ""
                     if key and key in seen_keys:
                         continue

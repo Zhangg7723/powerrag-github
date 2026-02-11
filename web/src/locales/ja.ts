@@ -504,8 +504,8 @@ export default {
       profile: 'プロファイル',
       avatar: 'アバター‌',
       profileDescription: 'ここで写真と個人情報を更新してください。',
-      dingtalk_kbDescription:
-        'DingTalk のナレッジベースを接続してドキュメントをインポートします。',
+      aliding_kbDescription:
+        'AliDing（阿里釘）のナレッジベースを接続してドキュメントをインポートします。',
       maxTokens: '最大トークン数',
       maxTokensMessage: '最大トークン数は必須です',
       maxTokensTip:

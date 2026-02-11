@@ -2,7 +2,7 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Generator
 
 from alibabacloud_aliding20230426.client import Client as AlidingClient
 from alibabacloud_aliding20230426 import models as aliding_models
@@ -14,7 +14,7 @@ from common.data_source.exceptions import ConnectorMissingCredentialError
 from common.data_source.interfaces import LoadConnector, PollConnector, SecondsSinceUnixEpoch
 from common.data_source.models import Document, GenerateDocumentsOutput
 
-DINGTALK_SKILL_ID = "1270abf4-0a12-4696-9a53-311142e38996"
+ALIDING_SKILL_ID = "1270abf4-0a12-4696-9a53-311142e38996"
 
 
 def _normalize_kb_urls(raw_urls: Any) -> list[str]:
@@ -32,7 +32,7 @@ def _normalize_kb_urls(raw_urls: Any) -> list[str]:
     return [str(raw_urls).strip()] if str(raw_urls).strip() else []
 
 
-class DingTalkKBConnector(LoadConnector, PollConnector):
+class AliDingKBConnector(LoadConnector, PollConnector):
     def __init__(
         self,
         public_account_id: str,
@@ -52,7 +52,7 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
         access_key_id = credentials.get("access_key_id")
         access_key_secret = credentials.get("access_key_secret")
         if not access_key_id or not access_key_secret:
-            raise ConnectorMissingCredentialError("DingTalk KB credentials missing access_key_id/access_key_secret.")
+            raise ConnectorMissingCredentialError("AliDing KB credentials missing access_key_id/access_key_secret.")
 
         config = open_api_models.Config(
             access_key_id=access_key_id,
@@ -64,7 +64,7 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
 
     def _invoke_skill(self, url: str) -> list[dict[str, Any]]:
         if not self._client:
-            raise ConnectorMissingCredentialError("DingTalk KB credentials not loaded.")
+            raise ConnectorMissingCredentialError("AliDing KB credentials not loaded.")
 
         account_context = aliding_models.InvokeSkillHeadersAccountContext(
             account_id=self.public_account_id
@@ -81,7 +81,7 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
 
         request = aliding_models.InvokeSkillRequest(
             params=params,
-            skill_id=DINGTALK_SKILL_ID,
+            skill_id=ALIDING_SKILL_ID,
         )
 
         runtime = util_models.RuntimeOptions(
@@ -109,7 +109,7 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
                 try:
                     docs = self._invoke_skill(url)
                     logging.info(
-                        "DingTalk KB fetched %s document(s) from %s",
+                        "AliDing KB fetched %s document(s) from %s",
                         len(docs),
                         url,
                     )
@@ -120,7 +120,7 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
                     error_msg = str(exc)
                     if "Read timed out" in error_msg and attempt < max_retries:
                         logging.warning(
-                            "Fetch DingTalk KB URL %s timed out, retrying (%s/%s)...",
+                            "Fetch AliDing KB URL %s timed out, retrying (%s/%s)...",
                             url,
                             attempt,
                             max_retries,
@@ -128,14 +128,14 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
                         time.sleep(retry_delay * attempt)
                         continue
                     logging.error(
-                        "Failed to fetch DingTalk KB content for %s after %s attempts: %s",
+                        "Failed to fetch AliDing KB content for %s after %s attempts: %s",
                         url,
                         attempt,
                         error_msg,
                     )
                     break
             time.sleep(1.0)
-        logging.info("DingTalk KB total fetched documents: %s", len(all_results))
+        logging.info("AliDing KB total fetched documents: %s", len(all_results))
         return all_results
 
     def _parse_response(self, response: Any) -> list[dict[str, Any]]:
@@ -200,8 +200,8 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
         now = datetime.now(timezone.utc)
 
         return Document(
-            id=f"dingtalk_kb:{doc_hash}",
-            source=DocumentSource.DINGTALK_KB,
+            id=f"aliding_kb:{doc_hash}",
+            source=DocumentSource.ALIDING_KB,
             semantic_identifier=title,
             extension=".md",
             blob=blob,
@@ -209,17 +209,17 @@ class DingTalkKBConnector(LoadConnector, PollConnector):
             size_bytes=len(blob),
             metadata={
                 "url": url,
-                "dingtalk_doc_id": doc.get("doc_id"),
+                "aliding_doc_id": doc.get("doc_id"),
             },
         )
 
     def load_from_state(self) -> GenerateDocumentsOutput:
         if not self._client:
-            raise ConnectorMissingCredentialError("DingTalk KB credentials not loaded.")
+            raise ConnectorMissingCredentialError("AliDing KB credentials not loaded.")
         if not self.public_account_id:
-            raise ValueError("DingTalk KB public_account_id is required.")
+            raise ValueError("AliDing KB public_account_id is required.")
         if not self.kb_urls:
-            raise ValueError("DingTalk KB kb_urls is required.")
+            raise ValueError("AliDing KB kb_urls is required.")
 
         batch: list[Document] = []
         docs = self._fetch_kb_content(self.kb_urls)

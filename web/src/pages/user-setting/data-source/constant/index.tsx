@@ -29,7 +29,7 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   GITHUB = 'github',
-  DINGTALK_KB = 'dingtalk_kb',
+  ALIDING_KB = 'aliding_kb',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -134,10 +134,10 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.IMAP}Description`),
       icon: <SvgIcon name={'data-source/imap'} width={38} />,
     },
-    [DataSourceKey.DINGTALK_KB]: {
-      name: 'DingTalk KB',
-      description: t(`setting.${DataSourceKey.DINGTALK_KB}Description`),
-      icon: <SvgIcon name={'data-source/dingtalk'} width={38} />,
+    [DataSourceKey.ALIDING_KB]: {
+      name: 'AliDing KB',
+      description: t(`setting.${DataSourceKey.ALIDING_KB}Description`),
+      icon: <SvgIcon name={'data-source/aliding'} width={38} />,
     },
   };
 };
@@ -828,7 +828,7 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
-  [DataSourceKey.DINGTALK_KB]: [
+  [DataSourceKey.ALIDING_KB]: [
     {
       label: 'Access Key ID',
       name: 'config.credentials.access_key_id',
@@ -1109,9 +1109,9 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
-  [DataSourceKey.DINGTALK_KB]: {
+  [DataSourceKey.ALIDING_KB]: {
     name: '',
-    source: DataSourceKey.DINGTALK_KB,
+    source: DataSourceKey.ALIDING_KB,
     config: {
       public_account_id: '',
       kb_urls: '',

@@ -461,8 +461,8 @@ export default {
       profile: 'Profil',
       avatar: 'Avatar',
       profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
-      dingtalk_kbDescription:
-        'Hubungkan basis pengetahuan DingTalk Anda untuk mengimpor dokumen.',
+      aliding_kbDescription:
+        'Hubungkan basis pengetahuan AliDing Anda untuk mengimpor dokumen.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
       maxTokensTip:

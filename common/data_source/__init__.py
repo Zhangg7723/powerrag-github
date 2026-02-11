@@ -39,7 +39,7 @@ from .moodle_connector import MoodleConnector
 from .airtable_connector import AirtableConnector
 from .asana_connector import AsanaConnector
 from .imap_connector import ImapConnector
-from .dingtalk_kb_connector import DingTalkKBConnector
+from .aliding_kb_connector import AliDingKBConnector
 from .config import BlobType, DocumentSource
 from .models import Document, TextSection, ImageSection, BasicExpertInfo
 from .exceptions import (
@@ -78,5 +78,5 @@ __all__ = [
     "AirtableConnector",
     "AsanaConnector",
     "ImapConnector",
-    "DingTalkKBConnector"
+    "AliDingKBConnector"
 ]

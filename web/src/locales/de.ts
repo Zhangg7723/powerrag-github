@@ -951,8 +951,8 @@ Beispiel: Virtual Hosted Style`,
         'Verbinden Sie Ihr Box-Laufwerk, um Dateien und Ordner zu synchronisieren.',
       githubDescription:
         'Verbinden Sie GitHub, um Pull Requests und Issues zur Recherche zu synchronisieren.',
-      dingtalk_kbDescription:
-        'Verbinden Sie Ihre DingTalk-Wissensdatenbank, um Dokumente zu importieren.',
+      aliding_kbDescription:
+        'Verbinden Sie Ihre AliDing-Wissensdatenbank, um Dokumente zu importieren.',
       dropboxAccessTokenTip:
         'Generieren Sie ein langlebiges Zugriffstoken in der Dropbox App Console mit den Bereichen files.metadata.read, files.content.read und sharing.read.',
       moodleDescription:

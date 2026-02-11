@@ -50,7 +50,7 @@ from common.data_source import (
     AirtableConnector,
     AsanaConnector,
     ImapConnector,
-    DingTalkKBConnector
+    AliDingKBConnector
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -982,11 +982,11 @@ class IMAP(SyncBase):
         )
         return document_batches()
 
-class DingTalkKB(SyncBase):
-    SOURCE_NAME: str = FileSource.DINGTALK_KB
+class AliDingKB(SyncBase):
+    SOURCE_NAME: str = FileSource.ALIDING_KB
 
     async def _generate(self, task: dict):
-        self.connector = DingTalkKBConnector(
+        self.connector = AliDingKBConnector(
             public_account_id=self.conf.get("public_account_id"),
             kb_urls=self.conf.get("kb_urls") or self.conf.get("kb_url"),
             batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
@@ -996,7 +996,7 @@ class DingTalkKB(SyncBase):
 
         credentials = self.conf.get("credentials", {})
         if not credentials.get("access_key_id") or not credentials.get("access_key_secret"):
-            raise ValueError("Missing access_key_id/access_key_secret for DingTalk KB.")
+            raise ValueError("Missing access_key_id/access_key_secret for AliDing KB.")
 
         self.connector.load_credentials(
             {
@@ -1021,7 +1021,7 @@ class DingTalkKB(SyncBase):
                 begin_info = f"from {poll_start}"
 
         logging.info(
-            "Connect to DingTalk KB: public_account_id(%s) %s",
+            "Connect to AliDing KB: public_account_id(%s) %s",
             self.conf.get("public_account_id"),
             begin_info,
         )
@@ -1095,7 +1095,7 @@ func_factory = {
     FileSource.IMAP: IMAP,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
-    FileSource.DINGTALK_KB: DingTalkKB,
+    FileSource.ALIDING_KB: AliDingKB,
 }
 
 
