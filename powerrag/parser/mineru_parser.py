@@ -20,18 +20,11 @@ import os
 import logging
 import base64
 import re
-import sys
-import threading
-from io import BytesIO
-import pdfplumber
 from typing import Union, Dict, TypedDict, Tuple
 from api.utils.configs import get_base_config
 from common.settings import STORAGE_IMPL
 from PIL import Image
-
-LOCK_KEY_pdfplumber = "global_shared_lock_pdfplumber"
-if LOCK_KEY_pdfplumber not in sys.modules:
-    sys.modules[LOCK_KEY_pdfplumber] = threading.Lock()
+from powerrag.utils.file_utils import get_pdf_total_pages
 
 
 class ImageDict(TypedDict):
@@ -55,7 +48,7 @@ class MinerUPdfParser:
     def __call__(self, binary=None, from_page=0, to_page=100000, callback=None, kb_id: str = "default"):
         if callback:
             callback(msg="start to parse by mineru")
-        pages = MinerUPdfParser.total_page_number(self.filename, binary=binary)
+        pages = get_pdf_total_pages(filename=self.filename, binary=binary)
         page_size = 500
         page_ranges = [(1, 10**5)]
         all_md_content = ""
@@ -433,15 +426,3 @@ class MinerUPdfParser:
             return txt
         # Remove position tags: @@page_num\tleft\tright\ttop\tbottom##
         return re.sub(r"@@[0-9-]+\t[0-9.\t]+##", "", txt)
-
-    @staticmethod
-    def total_page_number(fnm, binary=None):
-        try:
-            with sys.modules[LOCK_KEY_pdfplumber]:
-                pdf = pdfplumber.open(fnm) if not binary else pdfplumber.open(BytesIO(binary))
-            total_page = len(pdf.pages)
-            pdf.close()
-            return total_page
-        except Exception:
-            logging.exception("total_page_number")
-            return 0

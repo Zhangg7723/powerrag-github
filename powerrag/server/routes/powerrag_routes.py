@@ -761,6 +761,10 @@ async def parse_to_md(tenant_id):
     将文档解析为 Markdown 格式，但不进行切分。
     适用于需要完整文档内容或外部系统自行处理切分的场景。
     
+    支持通过 return_pages 参数控制返回格式：
+    - return_pages=false (默认): 返回完整的 Markdown 内容
+    - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容
+    
     支持的文件格式:
     - PDF (.pdf)
     - Office 文档 (.doc, .docx, .ppt, .pptx)
@@ -771,14 +775,15 @@ async def parse_to_md(tenant_id):
     
     Request JSON:
     {
-        "doc_id": "document_id",  // RAGFlow 文档 ID
+        "doc_id": "document_id",
         "config": {
-            "layout_recognize": "mineru",  // 布局识别引擎: mineru 或 dots_ocr
-            "enable_ocr": false,           // 是否启用 OCR
-            "enable_formula": false,       // 是否识别公式
-            "enable_table": true,          // 是否识别表格
-            "from_page": 0,                // 起始页（仅 PDF）
-            "to_page": 100000              // 结束页（仅 PDF）
+            "return_pages": false,       // 是否按页返回（默认 false）
+            "layout_recognize": "mineru",
+            "enable_ocr": false,
+            "formula_enable": true,
+            "table_enable": true,
+            "from_page": 0,
+            "to_page": 100000
         }
     }
     
@@ -788,16 +793,21 @@ async def parse_to_md(tenant_id):
         "data": {
             "doc_id": "document_id",
             "doc_name": "document.pdf",
-            "markdown": "# Title\n\nContent...",  // 完整的 Markdown 内容
-            "markdown_length": 5000,
-            "images": {                            // 文档中的图片（base64）
-                "image_001.png": "base64_data...",
-                "image_002.png": "base64_data..."
-            },
-            "total_images": 2
+            "return_pages": false,
+            "pages": [
+                {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+            ],
+            "total_pages": 1,
+            "images": {"image_name.png": "base64...", ...},
+            "total_images": 1
         },
         "message": "success"
     }
+    
+    说明:
+    - return_pages=false (默认): pages 包含 1 个元素，page_num=-1，content 为完整文档内容
+    - return_pages=true: pages 包含每页独立的 Markdown，page_num 从 1 开始
+    - images: 文档中提取的图片（key 为图片名，value 为 base64 编码内容）
     """
     try:
         data = await request.get_json()
@@ -810,6 +820,7 @@ async def parse_to_md(tenant_id):
         
         doc_id = data.get("doc_id")
         config = data.get("config", {})
+        return_pages = config.get("return_pages", False)
         
         if not doc_id:
             return jsonify({
@@ -839,11 +850,8 @@ async def parse_to_md(tenant_id):
         gotenberg_url = config.get("gotenberg_url", GOTENBERG_URL)
         service = PowerRAGParseService(gotenberg_url=gotenberg_url)
         
-        # Parse document to markdown (no chunking)
-        file_ext = Path(doc.name).suffix.lstrip('.').lower()
-        
         # Determine format type
-        # Supported: PDF, Office (doc/docx/ppt/pptx), HTML, Images (jpg/png)
+        file_ext = Path(doc.name).suffix.lstrip('.').lower()
         format_type = FILE_EXTENSION_TO_FORMAT_TYPE.get(file_ext)
         if not format_type:
             return jsonify({
@@ -851,27 +859,48 @@ async def parse_to_md(tenant_id):
                 "message": f"Unsupported file format: {file_ext}. Supported formats: pdf, doc, docx, ppt, pptx, jpg, png, html"
             }), 400
         
-        # Use _parse_to_markdown method (returns tuple of markdown_content and images)
-        md_content, images = service._parse_to_markdown(
-            filename=doc.name,
-            binary=binary,
-            format_type=format_type,
-            config=config
-        )
+        if return_pages:
+            # 按页解析
+            result = service.parse_to_markdown_by_page(
+                filename=doc.name,
+                binary=binary,
+                format_type=format_type,
+                config=config
+            )
+            pages = result["pages"]
+            images = result.get("images", {})
+        else:
+            # 默认：整体解析，page_num=-1 表示完整内容
+            md_content, images = service._parse_to_markdown(
+                filename=doc.name,
+                binary=binary,
+                format_type=format_type,
+                config=config
+            )
+            pages = [{"page_num": -1, "content": md_content}]
+            if not images:
+                images = {}
         
         return jsonify({
             "code": 0,
             "data": {
                 "doc_id": doc_id,
                 "doc_name": doc.name,
-                "markdown": md_content,
-                "markdown_length": len(md_content),
+                "return_pages": return_pages,
+                "pages": pages,
+                "total_pages": len(pages),
                 "images": images,
                 "total_images": len(images)
             },
             "message": "success"
         }), 200
         
+    except ValueError as e:
+        logger.error(f"Parse to markdown value error: {e}", exc_info=True)
+        return jsonify({
+            "code": 400,
+            "message": str(e)
+        }), 400
     except Exception as e:
         logger.error(f"Parse to markdown error: {e}", exc_info=True)
         return jsonify({
@@ -895,6 +924,7 @@ async def parse_to_md_async(tenant_id):
     {
         "doc_id": "document_id",  // RAGFlow 文档 ID
         "config": {
+            "return_pages": false,  // 是否按页返回（默认 false）
             "layout_recognize": "mineru",
             "enable_ocr": false,
             "enable_formula": false,
@@ -1011,10 +1041,11 @@ def get_parse_to_md_status(task_id):
             "result": {
                 "doc_id": "...",
                 "doc_name": "...",
-                "markdown": "...",
-                "markdown_length": 5000,
-                "images": {...},
-                "total_images": 2
+                "return_pages": false,
+                "pages": [
+                    {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+                ],
+                "total_pages": 1
             },
             "error": "Error message if failed"
         },
@@ -1057,6 +1088,10 @@ async def parse_to_md_upload(tenant_id):
     直接上传文件并解析为 Markdown，不进行切分。
     支持两种方式：1) 直接上传文件 2) 提供文件URL
     
+    支持通过 return_pages 参数控制返回格式：
+    - return_pages=false (默认): 返回完整的 Markdown 内容
+    - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容
+    
     支持的文件格式:
     - PDF (.pdf)
     - Office 文档 (.doc, .docx, .ppt, .pptx)
@@ -1090,12 +1125,21 @@ async def parse_to_md_upload(tenant_id):
     {
         "code": 0,
         "data": {
-            "content": "# Title\n\nContent...",
-            "images": {...},
-            "total_images": 2
+            "return_pages": false,
+            "pages": [
+                {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+            ],
+            "total_pages": 1,
+            "images": {"image_name.png": "base64...", ...},
+            "total_images": 1
         },
         "message": "success"
     }
+    
+    说明:
+    - return_pages=false (默认): pages 包含 1 个元素，page_num=-1，content 为完整文档内容
+    - return_pages=true: pages 包含每页独立的 Markdown，page_num 从 1 开始
+    - images: 文档中提取的图片（key 为图片名，value 为 base64 编码内容）
     """
     try:
         # Parse config from JSON string if provided
@@ -1109,6 +1153,9 @@ async def parse_to_md_upload(tenant_id):
                 "code": 400,
                 "message": f"Invalid JSON in config parameter: {str(e)}"
             }), 400
+        
+        # Get return_pages from config (default: false)
+        return_pages = config.get("return_pages", False)
         
         # Get file_url parameter
         file_url = form.get('file_url')
@@ -1289,19 +1336,34 @@ async def parse_to_md_upload(tenant_id):
         gotenberg_url = config.get("gotenberg_url", GOTENBERG_URL)
         service = PowerRAGParseService(gotenberg_url=gotenberg_url)
         
-        # Parse to markdown
-        md_content, images = service._parse_to_markdown(
-            filename=filename,
-            binary=binary,
-            format_type=format_type,
-            config=config
-        )
+        if return_pages:
+            # 按页解析
+            result = service.parse_to_markdown_by_page(
+                filename=filename,
+                binary=binary,
+                format_type=format_type,
+                config=config
+            )
+            pages = result["pages"]
+            images = result.get("images", {})
+        else:
+            # 默认：整体解析，page_num=-1 表示完整内容
+            md_content, images = service._parse_to_markdown(
+                filename=filename,
+                binary=binary,
+                format_type=format_type,
+                config=config
+            )
+            pages = [{"page_num": -1, "content": md_content}]
+            if not images:
+                images = {}
         
-        # Return as JSON
         return jsonify({
             "code": 0,
             "data": {
-                "content": md_content,
+                "return_pages": return_pages,
+                "pages": pages,
+                "total_pages": len(pages),
                 "images": images,
                 "total_images": len(images)
             },

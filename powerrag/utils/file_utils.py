@@ -20,6 +20,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import shutil
@@ -277,6 +278,28 @@ def read_potential_broken_pdf(blob):
         return repaired
 
     return blob
+
+
+def get_pdf_total_pages(filename: str, binary: bytes = None) -> int:
+    """
+    Get total page count for a PDF file.
+
+    Args:
+        filename: PDF filename or path (used when binary is None)
+        binary: PDF binary bytes (preferred in server-side parsing)
+
+    Returns:
+        Total page count. Returns 0 when page count cannot be determined.
+    """
+    try:
+        with sys.modules[LOCK_KEY_pdfplumber]:
+            pdf = pdfplumber.open(filename) if not binary else pdfplumber.open(BytesIO(binary))
+        total_page = len(pdf.pages)
+        pdf.close()
+        return total_page
+    except Exception:
+        logging.exception("get_pdf_total_pages")
+        return 0
 
 
 

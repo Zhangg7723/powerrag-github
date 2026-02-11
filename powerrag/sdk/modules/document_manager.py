@@ -383,6 +383,75 @@ class DocumentManager:
         
         return res_json.get("data", {}).get("task_id", "")
     
+    @staticmethod
+    def _add_compat_fields(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        为返回结果添加向后兼容字段，使老版本 SDK 代码仍然可用。
+        
+        新格式使用 pages 数组，但老版本 SDK 代码可能会访问:
+        - result['markdown'] / result['markdown_length'] (parse_to_md 旧格式)
+        - result['content'] (parse_to_md_upload / parse_to_md_binary 旧格式)
+        - result['images'] / result['total_images'] (如果 API 未返回，则提供空默认值)
+        
+        此方法在不影响新格式的前提下，补充这些兼容字段。
+        """
+        if not data or "pages" not in data:
+            return data
+        
+        pages = data.get("pages", [])
+        return_pages = data.get("return_pages", False)
+        
+        # 仅在非按页模式下添加兼容字段（按页模式是新功能，不存在老代码）
+        if not return_pages and len(pages) == 1:
+            full_content = pages[0].get("content", "")
+            # 兼容 parse_to_md 旧格式
+            if "markdown" not in data:
+                data["markdown"] = full_content
+            if "markdown_length" not in data:
+                data["markdown_length"] = len(full_content)
+            # 兼容 parse_to_md_upload / parse_to_md_binary 旧格式
+            if "content" not in data:
+                data["content"] = full_content
+        
+        # 确保图片字段存在（兼容老版本服务端可能未返回的情况）
+        if "images" not in data:
+            data["images"] = {}
+        if "total_images" not in data:
+            data["total_images"] = 0
+        
+        return data
+
+    @classmethod
+    def _normalize_async_status(cls, status: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        归一化异步任务状态结果，统一为 pages 新格式，并补齐旧字段兼容。
+
+        - 新服务端返回 pages 格式：补充旧字段兼容。
+        - 老服务端返回 markdown 格式：转换为 pages 格式后再补兼容字段。
+        """
+        if not status or "result" not in status or not isinstance(status["result"], dict):
+            return status
+
+        result = status["result"]
+        if "pages" in result:
+            status["result"] = cls._add_compat_fields(result)
+            return status
+
+        # Backward compatibility for old async response:
+        # Convert markdown-based result to pages-based shape.
+        if "markdown" in result:
+            markdown = result.get("markdown", "")
+            normalized = dict(result)
+            normalized["return_pages"] = normalized.get("return_pages", False)
+            normalized["pages"] = normalized.get(
+                "pages",
+                [{"page_num": -1, "content": markdown}]
+            )
+            normalized["total_pages"] = normalized.get("total_pages", len(normalized["pages"]))
+            status["result"] = cls._add_compat_fields(normalized)
+
+        return status
+    
     def parse_to_md_async(
         self,
         doc_id: str,
@@ -403,6 +472,7 @@ class DocumentManager:
         Args:
             doc_id: 文档ID
             config: 解析配置（可选）
+                - return_pages: 是否按页返回（默认 False）
                 - layout_recognize: 布局识别引擎 (mineru 或 dots_ocr，默认 mineru)
                 - enable_ocr: 是否启用 OCR (默认 False)
                 - enable_formula: 是否识别公式 (默认 False)
@@ -427,7 +497,8 @@ class DocumentManager:
             >>> # 查询任务状态
             >>> status = client.document.get_parse_to_md_status(task_id)
             >>> if status["status"] == "success":
-            ...     print(f"Markdown: {status['result']['markdown']}")
+            ...     print(status["result"]["pages"][0]["content"][:200])  # 新格式
+            ...     print(status["result"]["markdown"][:200])             # 兼容旧格式
         """
         payload = {
             "doc_id": doc_id,
@@ -464,10 +535,17 @@ class DocumentManager:
                 "result": {  # 仅当 status="success" 时存在
                     "doc_id": "...",
                     "doc_name": "...",
+                    "return_pages": false,
+                    "pages": [
+                        {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+                    ],
+                    "total_pages": 1,
+                    "images": {"img_001.png": "base64...", ...},
+                    "total_images": N,
+                    # 向后兼容字段
                     "markdown": "...",
                     "markdown_length": 5000,
-                    "images": {...},
-                    "total_images": 2
+                    "content": "..."
                 },
                 "error": "..."  # 仅当 status="failed" 时存在
             }
@@ -481,7 +559,8 @@ class DocumentManager:
             >>> 
             >>> if status["status"] == "success":
             ...     result = status["result"]
-            ...     print(f"Markdown length: {result['markdown_length']}")
+            ...     print(result["pages"][0]["content"][:200])  # 新格式
+            ...     print(result["markdown"][:200])             # 兼容旧格式
             >>> elif status["status"] == "failed":
             ...     print(f"Error: {status['error']}")
             >>> elif status["status"] in ["pending", "processing"]:
@@ -497,8 +576,8 @@ class DocumentManager:
         
         if res_json.get("code") != 0:
             raise Exception(res_json.get("message", "Get task status failed"))
-        
-        return res_json.get("data", {})
+
+        return self._normalize_async_status(res_json.get("data", {}))
     
     def wait_for_parse_to_md(
         self,
@@ -526,7 +605,8 @@ class DocumentManager:
         Example:
             >>> task_id = client.document.parse_to_md_async(doc_id)
             >>> result = client.document.wait_for_parse_to_md(task_id, timeout=600)
-            >>> print(f"Markdown: {result['result']['markdown']}")
+            >>> print(result["result"]["pages"][0]["content"][:200])  # 新格式
+            >>> print(result["result"]["markdown"][:200])             # 兼容旧格式
         """
         import time
         
@@ -562,6 +642,10 @@ class DocumentManager:
         将已上传的文档解析为 Markdown 格式，但不进行切分。
         适用于需要完整文档内容或外部系统自行处理切分的场景。
         
+        支持通过 config 中的 return_pages 参数控制返回格式：
+        - return_pages=false (默认): 返回完整的 Markdown 内容，pages 包含 1 个元素，page_num=-1
+        - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容，page_num 从 1 开始
+        
         支持的文件格式:
         - PDF (.pdf)
         - Office 文档 (.doc, .docx, .ppt, .pptx)
@@ -571,6 +655,7 @@ class DocumentManager:
         Args:
             doc_id: 文档ID
             config: 解析配置（可选）
+                - return_pages: 是否按页返回（默认 False）
                 - layout_recognize: 布局识别引擎 (mineru 或 dots_ocr，默认 mineru)
                 - enable_ocr: 是否启用 OCR (默认 False)
                 - enable_formula: 是否识别公式 (默认 False)
@@ -583,22 +668,52 @@ class DocumentManager:
             {
                 "doc_id": "...",
                 "doc_name": "...",
-                "markdown": "...",          # 完整的 Markdown 内容
-                "markdown_length": 5000,    # Markdown 长度
-                "images": {...},            # 图片字典 (base64)
-                "total_images": 2           # 图片总数
+                "return_pages": false,
+                "pages": [
+                    {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+                ],
+                "total_pages": 1,
+                "images": {"img_001.png": "base64...", ...},
+                "total_images": N,
+                # 向后兼容字段（仅 return_pages=false 时）:
+                "markdown": "# 完整 Markdown 内容...",
+                "markdown_length": 5000,
+                "content": "# 完整 Markdown 内容..."
+            }
+            
+            当 return_pages=true 时:
+            {
+                "doc_id": "...",
+                "doc_name": "...",
+                "return_pages": true,
+                "pages": [
+                    {"page_num": 1, "content": "# 第1页内容..."},
+                    {"page_num": 2, "content": "# 第2页内容..."}
+                ],
+                "total_pages": N,
+                "images": {"img_001.png": "base64...", ...},
+                "total_images": N
             }
         
         Raises:
             Exception: API调用失败
         
         Example:
+            >>> # 默认：整体解析（推荐使用新格式）
             >>> result = doc_manager.parse_to_md(
             ...     doc_id="doc_123",
             ...     config={"layout_recognize": "mineru", "enable_ocr": False}
             ... )
-            >>> print(f"Markdown length: {result['markdown_length']}")
-            >>> print(f"First 200 chars: {result['markdown'][:200]}")
+            >>> print(result['pages'][0]['content'][:200])  # 新格式
+            >>> print(result['markdown'][:200])             # 兼容旧格式
+            >>> 
+            >>> # 按页解析
+            >>> result = doc_manager.parse_to_md(
+            ...     doc_id="doc_123",
+            ...     config={"return_pages": True}
+            ... )
+            >>> for page in result['pages']:
+            ...     print(f"Page {page['page_num']}: {page['content'][:100]}")
         """
         payload = {
             "doc_id": doc_id,
@@ -614,7 +729,7 @@ class DocumentManager:
         if res_json.get("code") != 0:
             raise Exception(res_json.get("message", "Parse to markdown failed"))
         
-        return res_json.get("data", {})
+        return self._add_compat_fields(res_json.get("data", {}))
     
     def _parse_to_md_with_binary(
         self,
@@ -666,7 +781,7 @@ class DocumentManager:
         if res_json.get("code") != 0:
             raise Exception(res_json.get("message", "Parse to markdown failed"))
         
-        return res_json.get("data", {})
+        return self._add_compat_fields(res_json.get("data", {}))
     
     def parse_to_md_upload(
         self,
@@ -680,6 +795,10 @@ class DocumentManager:
         直接上传文件并解析为 Markdown 格式，不进行切分。
         不需要先上传到知识库，适合一次性解析场景。
         
+        支持通过 config 中的 return_pages 参数控制返回格式：
+        - return_pages=false (默认): 返回完整的 Markdown 内容
+        - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容
+        
         支持的文件格式:
         - PDF (.pdf)
         - Office 文档 (.doc, .docx, .ppt, .pptx)
@@ -689,39 +808,47 @@ class DocumentManager:
         Args:
             file_path: 文件路径
             config: 解析配置（可选），同 parse_to_md
+                - return_pages: 是否按页返回（默认 False）
+                - layout_recognize, enable_ocr, enable_formula, enable_table 等
             input_type: 文件类型识别模式（默认: 'auto'），支持：
                 - 'auto': 优先使用文件扩展名，无扩展名或不支持时自动识别（默认）
                 - 'pdf', 'office', 'html', 'image': 显式指定文件类型（跳过识别）
         
         Returns:
-            解析结果字典，包含以下字段：
-            - content: Markdown 内容
-            - images: 图片字典
-            - total_images: 图片总数
+            解析结果字典:
+            {
+                "return_pages": false,
+                "pages": [
+                    {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+                ],
+                "total_pages": 1,
+                "images": {"img_001.png": "base64...", ...},
+                "total_images": N,
+                # 向后兼容字段（仅 return_pages=false 时）:
+                "content": "# 完整 Markdown 内容...",
+                "markdown": "# 完整 Markdown 内容...",
+                "markdown_length": 5000
+            }
         
         Raises:
             FileNotFoundError: 文件不存在
             Exception: API调用失败
         
         Example:
-            >>> # 默认使用扩展名识别（推荐）
+            >>> # 默认使用扩展名识别（推荐使用新格式）
             >>> result = doc_manager.parse_to_md_upload(
             ...     file_path="document.pdf"
             ... )
-            >>> print(result['content'])
+            >>> print(result['pages'][0]['content'])  # 新格式
+            >>> print(result['content'])              # 兼容旧格式
             >>> 
-            >>> # 对于无扩展名文件，input_type='auto' 会自动从二进制内容识别
+            >>> # 按页解析
             >>> result = doc_manager.parse_to_md_upload(
-            ...     file_path="document_no_ext"
-            ...     # input_type='auto' 是默认值，可以省略
+            ...     file_path="document.pdf",
+            ...     config={"return_pages": True}
             ... )
-            >>> print(result['content'])
-            >>> 
-            >>> # 显式指定文件类型（跳过自动识别）
-            >>> result = doc_manager.parse_to_md_upload(
-            ...     file_path="document",
-            ...     input_type="pdf"
-            ... )
+            >>> for page in result['pages']:
+            ...     print(f"Page {page['page_num']}: {page['content'][:100]}")
         """
         path = Path(file_path)
         if not path.exists():
@@ -746,6 +873,10 @@ class DocumentManager:
         使用文件二进制数据解析为 Markdown 格式，不进行切分。
         适用于文件已在内存中或从其他来源获取的场景。
         
+        支持通过 config 中的 return_pages 参数控制返回格式：
+        - return_pages=false (默认): 返回完整的 Markdown 内容
+        - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容
+        
         支持的文件格式:
         - PDF (.pdf)
         - Office 文档 (.doc, .docx, .ppt, .pptx)
@@ -756,6 +887,7 @@ class DocumentManager:
             file_binary: 文件的二进制内容
             filename: 文件名
             config: 解析配置（可选），同 parse_to_md
+                - return_pages: 是否按页返回（默认 False）
                 - layout_recognize: 布局识别引擎 (mineru 或 dots_ocr，默认 mineru)
                 - enable_formula: 是否识别公式 (默认 False)
                 - enable_table: 是否识别表格 (默认 True)
@@ -766,10 +898,20 @@ class DocumentManager:
                 - 'pdf', 'office', 'html', 'image': 显式指定文件类型（跳过识别）
         
         Returns:
-            解析结果字典，包含以下字段：
-            - content: Markdown 内容
-            - images: 图片字典 (base64)
-            - total_images: 图片总数
+            解析结果字典:
+            {
+                "return_pages": false,
+                "pages": [
+                    {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+                ],
+                "total_pages": 1,
+                "images": {"img_001.png": "base64...", ...},
+                "total_images": N,
+                # 向后兼容字段（仅 return_pages=false 时）:
+                "content": "# 完整 Markdown 内容...",
+                "markdown": "# 完整 Markdown 内容...",
+                "markdown_length": 5000
+            }
         
         Raises:
             ValueError: 文件名或二进制数据无效
@@ -778,27 +920,22 @@ class DocumentManager:
         Example:
             >>> with open("document.pdf", "rb") as f:
             ...     file_binary = f.read()
-            >>> # 默认使用扩展名识别（推荐）
+            >>> # 默认使用扩展名识别（推荐使用新格式）
             >>> result = doc_manager.parse_to_md_binary(
             ...     file_binary=file_binary,
             ...     filename="document.pdf"
             ... )
-            >>> print(result['content'])
+            >>> print(result['pages'][0]['content'])  # 新格式
+            >>> print(result['content'])              # 兼容旧格式
             >>> 
-            >>> # 对于无扩展名的二进制数据，input_type='auto' 会自动识别
+            >>> # 按页解析
             >>> result = doc_manager.parse_to_md_binary(
             ...     file_binary=file_binary,
-            ...     filename="document"  # 无扩展名
-            ...     # input_type='auto' 是默认值
+            ...     filename="document.pdf",
+            ...     config={"return_pages": True}
             ... )
-            >>> print(result['content'])
-            >>> 
-            >>> # 显式指定文件类型（跳过自动识别）
-            >>> result = doc_manager.parse_to_md_binary(
-            ...     file_binary=file_binary,
-            ...     filename="document",
-            ...     input_type="pdf"
-            ... )
+            >>> for page in result['pages']:
+            ...     print(f"Page {page['page_num']}: {page['content'][:100]}")
         """
         if not file_binary:
             raise ValueError("file_binary cannot be empty")
