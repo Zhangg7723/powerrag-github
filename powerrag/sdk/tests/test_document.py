@@ -246,11 +246,15 @@ class TestDocumentParseToMD:
             # 验证返回结果
             assert "doc_id" in result
             assert "doc_name" in result
-            assert "markdown" in result
-            assert "markdown_length" in result
+            assert "pages" in result
+            assert "total_pages" in result
             assert result["doc_id"] == doc_id
-            assert isinstance(result["markdown"], str)
-            assert result["markdown_length"] > 0
+            assert result["return_pages"] is False
+            assert result["total_pages"] == 1
+            assert len(result["pages"]) == 1
+            assert result["pages"][0]["page_num"] == -1
+            assert isinstance(result["pages"][0]["content"], str)
+            assert len(result["pages"][0]["content"]) > 0
         finally:
             client.document.delete(kb_id, [doc_id])
     
@@ -271,8 +275,9 @@ class TestDocumentParseToMD:
             
             # 验证返回结果
             assert result["doc_id"] == doc_id
-            assert "markdown" in result
-            assert len(result["markdown"]) > 0
+            assert "pages" in result
+            assert result["total_pages"] == 1
+            assert len(result["pages"][0]["content"]) > 0
         finally:
             client.document.delete(kb_id, [doc_id])
     
@@ -287,17 +292,54 @@ class TestDocumentParseToMD:
         error_msg = str(exc_info.value).lower()
         assert "not found" in error_msg or "failed" in error_msg
     
-    def test_parse_to_md_with_images(self, client: PowerRAGClient, kb_id: str, test_file_path: str):
-        """测试解析带图片的文档"""
+    def test_parse_to_md_return_pages(self, client: PowerRAGClient, kb_id: str, test_file_path: str):
+        """测试按页解析文档"""
+        uploaded_docs = client.document.upload(kb_id, test_file_path)
+        doc_id = uploaded_docs[0]["id"]
+        
+        try:
+            result = client.document.parse_to_md(
+                doc_id,
+                config={"return_pages": True}
+            )
+            
+            # 验证按页返回的格式
+            assert "pages" in result
+            assert "total_pages" in result
+            assert result["return_pages"] is True
+            assert isinstance(result["pages"], list)
+            assert result["total_pages"] >= 1
+            # 每页应该有 page_num 和 content
+            for page in result["pages"]:
+                assert "page_num" in page
+                assert "content" in page
+                assert page["page_num"] >= 1
+        finally:
+            client.document.delete(kb_id, [doc_id])
+    
+    def test_parse_to_md_backward_compat(self, client: PowerRAGClient, kb_id: str, test_file_path: str):
+        """测试 parse_to_md 向后兼容字段（老版本 SDK 代码仍可用）"""
         uploaded_docs = client.document.upload(kb_id, test_file_path)
         doc_id = uploaded_docs[0]["id"]
         
         try:
             result = client.document.parse_to_md(doc_id)
             
-            # 验证图片相关字段
+            # 新格式字段
+            assert "pages" in result
+            assert "total_pages" in result
+            
+            # 向后兼容字段：老版本 SDK 代码使用的字段
+            assert "markdown" in result
+            assert "markdown_length" in result
+            assert "content" in result
             assert "images" in result
             assert "total_images" in result
+            
+            # 兼容字段内容应与 pages 一致
+            assert result["markdown"] == result["pages"][0]["content"]
+            assert result["content"] == result["pages"][0]["content"]
+            assert result["markdown_length"] == len(result["pages"][0]["content"])
             assert isinstance(result["images"], dict)
             assert isinstance(result["total_images"], int)
             assert result["total_images"] >= 0
@@ -330,8 +372,22 @@ class TestDocumentParseToMDAsync:
             result = client.document.wait_for_parse_to_md(task_id, timeout=300)
             assert result["status"] == "success"
             assert "result" in result
+            assert "pages" in result["result"]
+            assert "total_pages" in result["result"]
+            assert result["result"]["return_pages"] is False
+            assert result["result"]["total_pages"] == 1
+            assert len(result["result"]["pages"]) == 1
+            assert result["result"]["pages"][0]["page_num"] == -1
+            assert len(result["result"]["pages"][0]["content"]) > 0
+            # images fields
+            assert "images" in result["result"]
+            assert isinstance(result["result"]["images"], dict)
+            assert "total_images" in result["result"]
+            assert isinstance(result["result"]["total_images"], int)
+            assert result["result"]["total_images"] >= 0
+            # backward compatibility fields
             assert "markdown" in result["result"]
-            assert result["result"]["markdown_length"] > 0
+            assert result["result"]["markdown"] == result["result"]["pages"][0]["content"]
             
         finally:
             client.document.delete(kb_id, [doc_id])
@@ -355,8 +411,32 @@ class TestDocumentParseToMDAsync:
             # 等待完成
             result = client.document.wait_for_parse_to_md(task_id, timeout=300)
             assert result["status"] == "success"
-            assert result["result"]["markdown_length"] > 0
+            assert "pages" in result["result"]
+            assert result["result"]["total_pages"] == 1
+            assert len(result["result"]["pages"][0]["content"]) > 0
             
+        finally:
+            client.document.delete(kb_id, [doc_id])
+
+    def test_parse_to_md_async_return_pages(self, client: PowerRAGClient, kb_id: str, test_file_path: str):
+        """测试异步按页解析"""
+        uploaded_docs = client.document.upload(kb_id, test_file_path)
+        doc_id = uploaded_docs[0]["id"]
+
+        try:
+            task_id = client.document.parse_to_md_async(
+                doc_id,
+                config={"return_pages": True}
+            )
+            result = client.document.wait_for_parse_to_md(task_id, timeout=300)
+            assert result["status"] == "success"
+            assert result["result"]["return_pages"] is True
+            assert "pages" in result["result"]
+            assert result["result"]["total_pages"] >= 1
+            for page in result["result"]["pages"]:
+                assert "page_num" in page
+                assert "content" in page
+                assert page["page_num"] >= 1
         finally:
             client.document.delete(kb_id, [doc_id])
     
@@ -396,11 +476,14 @@ class TestDocumentParseToMDUpload:
         result = client.document.parse_to_md_upload(test_file_path)
         
         # 验证返回结果
-        assert "content" in result
-        assert "images" in result
-        assert "total_images" in result
-        assert isinstance(result["content"], str)
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert "total_pages" in result
+        assert result["return_pages"] is False
+        assert result["total_pages"] == 1
+        assert len(result["pages"]) == 1
+        assert result["pages"][0]["page_num"] == -1
+        assert isinstance(result["pages"][0]["content"], str)
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_parse_to_md_upload_with_config(self, client: PowerRAGClient, test_file_path: str):
         """测试带配置参数上传并解析"""
@@ -410,8 +493,31 @@ class TestDocumentParseToMDUpload:
         }
         result = client.document.parse_to_md_upload(test_file_path, config=config)
         
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
+    
+    def test_parse_to_md_upload_backward_compat(self, client: PowerRAGClient, test_file_path: str):
+        """测试 parse_to_md_upload 向后兼容字段"""
+        result = client.document.parse_to_md_upload(test_file_path)
+        
+        # 新格式字段
+        assert "pages" in result
+        assert "total_pages" in result
+        
+        # 向后兼容字段
         assert "content" in result
-        assert len(result["content"]) > 0
+        assert "markdown" in result
+        assert "markdown_length" in result
+        assert "images" in result
+        assert "total_images" in result
+        
+        # 兼容字段内容应与 pages 一致
+        assert result["content"] == result["pages"][0]["content"]
+        assert result["markdown"] == result["pages"][0]["content"]
+        assert isinstance(result["images"], dict)
+        assert isinstance(result["total_images"], int)
+        assert result["total_images"] >= 0
     
     def test_parse_to_md_upload_nonexistent_file(self, client: PowerRAGClient):
         """测试上传不存在的文件"""
@@ -424,8 +530,9 @@ class TestDocumentParseToMDUpload:
         # 这里我们只测试 txt 文件，实际使用时可以添加更多格式
         result = client.document.parse_to_md_upload(test_file_path)
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
 
 
 class TestDocumentParseToMDBinary:
@@ -444,11 +551,14 @@ class TestDocumentParseToMDBinary:
         )
         
         # 验证返回结果
-        assert "content" in result
-        assert "images" in result
-        assert "total_images" in result
-        assert isinstance(result["content"], str)
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert "total_pages" in result
+        assert result["return_pages"] is False
+        assert result["total_pages"] == 1
+        assert len(result["pages"]) == 1
+        assert result["pages"][0]["page_num"] == -1
+        assert isinstance(result["pages"][0]["content"], str)
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_parse_to_md_binary_with_config(self, client: PowerRAGClient, test_file_path: str):
         """测试带配置参数的二进制文件解析"""
@@ -467,8 +577,9 @@ class TestDocumentParseToMDBinary:
             config=config
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_parse_to_md_binary_empty_content(self, client: PowerRAGClient):
         """测试空的二进制内容"""
@@ -505,11 +616,12 @@ class TestDocumentParseToMDBinary:
             filename="test.html"
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
-    def test_parse_to_md_binary_with_images(self, client: PowerRAGClient, test_file_path: str):
-        """测试解析带图片的文档（二进制）"""
+    def test_parse_to_md_binary_backward_compat(self, client: PowerRAGClient, test_file_path: str):
+        """测试 parse_to_md_binary 向后兼容字段"""
         with open(test_file_path, "rb") as f:
             file_binary = f.read()
         
@@ -518,12 +630,44 @@ class TestDocumentParseToMDBinary:
             filename="test_document.html"
         )
         
-        # 验证图片相关字段
+        # 新格式字段
+        assert "pages" in result
+        assert "total_pages" in result
+        
+        # 向后兼容字段
+        assert "content" in result
+        assert "markdown" in result
+        assert "markdown_length" in result
         assert "images" in result
         assert "total_images" in result
+        
+        # 兼容字段内容应与 pages 一致
+        assert result["content"] == result["pages"][0]["content"]
+        assert result["markdown"] == result["pages"][0]["content"]
         assert isinstance(result["images"], dict)
         assert isinstance(result["total_images"], int)
         assert result["total_images"] >= 0
+    
+    def test_parse_to_md_binary_return_pages(self, client: PowerRAGClient, test_file_path: str):
+        """测试按页解析的二进制文件"""
+        with open(test_file_path, "rb") as f:
+            file_binary = f.read()
+        
+        result = client.document.parse_to_md_binary(
+            file_binary=file_binary,
+            filename="test_document.html",
+            config={"return_pages": True}
+        )
+        
+        # 验证按页返回格式
+        assert "pages" in result
+        assert "total_pages" in result
+        assert result["return_pages"] is True
+        assert isinstance(result["pages"], list)
+        assert result["total_pages"] >= 1
+        for page in result["pages"]:
+            assert "page_num" in page
+            assert "content" in page
     
     def test_parse_to_md_binary_filename_with_extension(self, client: PowerRAGClient, test_file_path: str):
         """测试文件名必须包含扩展名"""
@@ -536,7 +680,8 @@ class TestDocumentParseToMDBinary:
             filename="document.html"
         )
         
-        assert "content" in result
+        assert "pages" in result
+        assert result["total_pages"] >= 1
     
     def test_parse_to_md_binary_large_file(self, client: PowerRAGClient, tmp_path):
         """测试较大文件的二进制解析"""
@@ -553,10 +698,11 @@ class TestDocumentParseToMDBinary:
             filename="large_test.html"
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
         # 验证内容长度合理
-        assert len(result["content"]) > 1000
+        assert len(result["pages"][0]["content"]) > 1000
     
     def test_parse_to_md_binary_utf8_content(self, client: PowerRAGClient, tmp_path):
         """测试包含UTF-8字符的文件"""
@@ -582,8 +728,9 @@ class TestDocumentParseToMDBinary:
             filename="utf8_test.html"
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
 
 
 class TestDocumentInputTypeAutoDetection:
@@ -704,8 +851,9 @@ class TestDocumentInputTypeAutoDetection:
             # input_type='auto' 是默认值，可以省略
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_auto_detection_without_extension_pdf(self, client: PowerRAGClient, tmp_path):
         """测试无扩展名 PDF 文件，input_type='auto' 会自动从二进制检测"""
@@ -724,9 +872,10 @@ class TestDocumentInputTypeAutoDetection:
         )
         
         # 验证解析结果
-        assert "content" in result, "Result should contain 'content' field"
-        assert len(result["content"]) > 0, "Content should not be empty (PDF should be successfully parsed)"
-        assert isinstance(result["content"], str), "Content should be a string"
+        assert "pages" in result, "Result should contain 'pages' field"
+        assert result["total_pages"] >= 1, "Should have at least 1 page"
+        assert len(result["pages"][0]["content"]) > 0, "Content should not be empty (PDF should be successfully parsed)"
+        assert isinstance(result["pages"][0]["content"], str), "Content should be a string"
     
     def test_auto_detection_without_extension_html(self, client: PowerRAGClient):
         """测试无扩展名 HTML 文件，input_type='auto' 会自动从二进制检测"""
@@ -739,8 +888,9 @@ class TestDocumentInputTypeAutoDetection:
             # input_type='auto' 会从二进制内容检测出 HTML
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_explicit_input_type_pdf(self, client: PowerRAGClient, tmp_path):
         """测试显式指定 input_type='pdf'"""
@@ -758,9 +908,10 @@ class TestDocumentInputTypeAutoDetection:
         )
         
         # 验证解析结果
-        assert "content" in result, "Result should contain 'content' field"
-        assert len(result["content"]) > 0, "Content should not be empty"
-        assert isinstance(result["content"], str), "Content should be a string"
+        assert "pages" in result, "Result should contain 'pages' field"
+        assert result["total_pages"] >= 1, "Should have at least 1 page"
+        assert len(result["pages"][0]["content"]) > 0, "Content should not be empty"
+        assert isinstance(result["pages"][0]["content"], str), "Content should be a string"
     
     def test_explicit_input_type_html(self, client: PowerRAGClient):
         """测试显式指定 input_type='html'"""
@@ -773,8 +924,9 @@ class TestDocumentInputTypeAutoDetection:
             input_type="html"  # 显式指定类型
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_parse_to_md_upload_with_auto_detection(self, client: PowerRAGClient, tmp_path):
         """测试 parse_to_md_upload 方法的自动检测功能"""
@@ -786,8 +938,9 @@ class TestDocumentInputTypeAutoDetection:
         # 使用默认的 input_type='auto'
         result = client.document.parse_to_md_upload(str(html_file))
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_parse_to_md_upload_with_explicit_type(self, client: PowerRAGClient, tmp_path):
         """测试 parse_to_md_upload 显式指定类型"""
@@ -801,8 +954,9 @@ class TestDocumentInputTypeAutoDetection:
             input_type="html"
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_auto_detection_priority_extension_over_binary(self, client: PowerRAGClient, tmp_path):
         """测试 input_type='auto' 优先使用扩展名而非二进制检测"""
@@ -821,9 +975,10 @@ class TestDocumentInputTypeAutoDetection:
             # input_type='auto' 默认值
         )
         
-        assert "content" in result
+        assert "pages" in result
+        assert result["total_pages"] >= 1
         # 验证确实解析成功（说明使用了正确的类型）
-        assert "Priority Test" in result["content"] or len(result["content"]) > 0
+        assert "Priority Test" in result["pages"][0]["content"] or len(result["pages"][0]["content"]) > 0
     
     def test_auto_detection_fallback_to_binary(self, client: PowerRAGClient):
         """测试扩展名不支持时，fallback 到二进制检测"""
@@ -837,8 +992,9 @@ class TestDocumentInputTypeAutoDetection:
         )
         
         # 应该能够通过二进制检测识别为 HTML
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
     
     def test_config_with_input_type(self, client: PowerRAGClient, tmp_path):
         """测试 config 中包含 input_type 参数"""
@@ -860,8 +1016,9 @@ class TestDocumentInputTypeAutoDetection:
             input_type="html"
         )
         
-        assert "content" in result
-        assert len(result["content"]) > 0
+        assert "pages" in result
+        assert result["total_pages"] >= 1
+        assert len(result["pages"][0]["content"]) > 0
 
 
 class TestDocumentFileUrl:
@@ -888,8 +1045,9 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert "content" in result["data"]
-        assert len(result["data"]["content"]) > 0
+        assert "pages" in result["data"]
+        assert result["data"]["total_pages"] >= 1
+        assert len(result["data"]["pages"][0]["content"]) > 0
     
     def test_parse_from_url_with_filename(self, client: PowerRAGClient):
         """测试从URL下载并指定文件名"""
@@ -936,7 +1094,8 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert "content" in result["data"]
+        assert "pages" in result["data"]
+        assert result["data"]["total_pages"] >= 1
     
     def test_parse_from_invalid_url(self, client: PowerRAGClient):
         """测试无效URL应返回错误"""
@@ -1029,7 +1188,8 @@ class TestDocumentFileUrl:
         assert response.status_code == 200
         result = response.json()
         assert result["code"] == 0
-        assert "content" in result["data"]
+        assert "pages" in result["data"]
+        assert result["data"]["total_pages"] >= 1
     
     def test_parse_from_url_empty_file(self, client: PowerRAGClient):
         """测试从URL下载空文件应返回错误"""

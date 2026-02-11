@@ -378,6 +378,238 @@ class PowerRAGParseService:
             logger.error(f"Error parsing PDF to markdown: {e}", exc_info=True)
             raise
     
+    def parse_to_markdown_by_page(self, filename: str, binary: bytes, 
+                                   format_type: str, config: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        按页解析文档为 Markdown，每页返回独立的 Markdown 内容。
+        
+        对于 PDF 文件：逐页调用解析器，每页生成独立的 Markdown。
+        对于 Office/HTML 文件：先转换为 PDF，再逐页解析。
+        对于 Markdown 文件：直接返回完整内容作为第1页。
+        
+        Args:
+            filename: 文件名
+            binary: 文件二进制数据
+            format_type: 格式类型 (pdf, office, html, markdown)
+            config: 解析配置
+            
+        Returns:
+            Dict containing:
+            {
+                "pages": [
+                    {"page_num": 1, "content": "# Page 1 markdown..."},
+                    {"page_num": 2, "content": "# Page 2 markdown..."},
+                    ...
+                ],
+                "total_pages": N,
+                "images": {"image_name.png": "base64...", ...},
+                "filename": "..."
+            }
+        """
+        if config is None:
+            config = {}
+        
+        # For markdown files, return as-is as a single page
+        if format_type == 'markdown':
+            logger.info(f"Reading markdown file as single page: {filename}")
+            try:
+                md_content = binary.decode('utf-8')
+                return {
+                    "pages": [{"page_num": 1, "content": md_content}],
+                    "total_pages": 1,
+                    "images": {},
+                    "filename": filename
+                }
+            except Exception as e:
+                logger.error(f"Error decoding markdown: {e}")
+                raise ValueError(f"Failed to decode markdown file: {e}")
+        
+        # For Office/HTML, convert to PDF first
+        if format_type in ['office', 'html']:
+            logger.info(f"Converting {format_type} document to PDF for page-by-page parsing: {filename}")
+            try:
+                pdf_binary = self.convert_service.convert_to_pdf(filename, binary, format_type)
+                filename = Path(filename).stem + '.pdf'
+                binary = pdf_binary
+                logger.info(f"Conversion successful, now parsing PDF page by page")
+            except Exception as e:
+                logger.error(f"Failed to convert {filename} to PDF: {e}")
+                raise ValueError(f"Document conversion failed: {e}")
+        
+        # For images, parse as single page
+        if format_type == 'image':
+            logger.info(f"Parsing image as single page: {filename}")
+            md_content, images = self._parse_to_markdown(filename, binary, format_type, config)
+            return {
+                "pages": [{"page_num": 1, "content": md_content}],
+                "total_pages": 1,
+                "images": images if images else {},
+                "filename": filename
+            }
+        
+        # For PDF: parse page by page
+        logger.info(f"Parsing PDF page by page: {filename}")
+        
+        # Get total page count
+        from powerrag.utils.file_utils import get_pdf_total_pages
+        total_pages = get_pdf_total_pages(filename=filename, binary=binary)
+        
+        if total_pages == 0:
+            logger.warning(f"PDF has 0 pages: {filename}")
+            return {
+                "pages": [],
+                "total_pages": 0,
+                "images": {},
+                "filename": filename
+            }
+        
+        # Respect from_page / to_page config with robust validation
+        from_page_raw = config.get('from_page', 0)
+        to_page_raw = config.get('to_page', total_pages)
+
+        # Reject bool explicitly (bool is a subclass of int in Python)
+        if isinstance(from_page_raw, bool) or isinstance(to_page_raw, bool):
+            raise ValueError("from_page and to_page must be integers, not boolean")
+
+        try:
+            from_page = int(from_page_raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid from_page: {from_page_raw}. from_page must be an integer >= 0")
+
+        try:
+            to_page = int(to_page_raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid to_page: {to_page_raw}. to_page must be an integer >= 0")
+
+        # Clamp page range to valid bounds [0, total_pages]
+        from_page = max(0, min(from_page, total_pages))
+        to_page = max(0, min(to_page, total_pages))
+
+        # Keep behavior deterministic when range is reversed
+        if from_page > to_page:
+            raise ValueError(
+                f"Invalid page range: from_page ({from_page}) cannot be greater than to_page ({to_page})"
+            )
+        
+        # Get parser config
+        layout_recognize = config.get('layout_recognize', 'mineru')
+        
+        pages = []
+        all_images = {}
+        
+        for page_idx in range(from_page, to_page):
+            try:
+                page_num = page_idx + 1  # 1-based page number
+                logger.info(f"Parsing page {page_num}/{to_page}")
+                
+                # Parse single page
+                page_md, page_images = self._parse_single_page(
+                    filename, binary, page_idx, layout_recognize, config
+                )
+                
+                # Collect images from this page
+                if page_images and isinstance(page_images, dict):
+                    all_images.update(page_images)
+                
+                if page_md and page_md.strip():
+                    pages.append({
+                        "page_num": page_num,
+                        "content": page_md.strip()
+                    })
+                else:
+                    # Even empty pages get an entry
+                    pages.append({
+                        "page_num": page_num,
+                        "content": ""
+                    })
+                    
+            except Exception as e:
+                logger.warning(f"Error parsing page {page_idx + 1}: {e}")
+                pages.append({
+                    "page_num": page_idx + 1,
+                    "content": "",
+                    "error": str(e)
+                })
+        
+        logger.info(f"Parsed {len(pages)} pages from {filename}")
+        
+        return {
+            "pages": pages,
+            "total_pages": len(pages),
+            "images": all_images,
+            "filename": filename
+        }
+    
+    def _parse_single_page(self, filename: str, binary: bytes, page_idx: int,
+                           layout_recognize: str, config: Dict[str, Any] = None) -> tuple:
+        """
+        解析 PDF 的单个页面
+        
+        Args:
+            filename: PDF 文件名
+            binary: PDF 二进制数据
+            page_idx: 页面索引（0-based）
+            layout_recognize: 布局识别引擎
+            config: 解析配置
+            
+        Returns:
+            Tuple of (markdown_content, images_dict)
+        """
+        if config is None:
+            config = {}
+        
+        if layout_recognize == 'dots_ocr':
+            from powerrag.parser.dots_ocr_parser import DotsOcrParser
+            
+            parser = DotsOcrParser(
+                filename=filename,
+                enable_ocr=config.get('enable_ocr', True)
+            )
+            
+            result, images_dict = parser(
+                binary=binary,
+                from_page=page_idx,
+                to_page=page_idx + 1,
+                callback=None
+            )
+        else:
+            # Default to MinerU
+            from powerrag.parser.mineru_parser import MinerUPdfParser
+            
+            parser = MinerUPdfParser(
+                filename=filename,
+                formula_enable=config.get('formula_enable', True),
+                table_enable=config.get('table_enable', True),
+                enable_ocr=config.get('enable_ocr', False)
+            )
+            
+            result, images_dict = parser(
+                binary=binary,
+                from_page=page_idx,
+                to_page=page_idx + 1,
+                callback=None
+            )
+        
+        # Extract markdown content
+        md_content = ""
+        if result and len(result) > 0:
+            md_content = result[0] if isinstance(result[0], str) else ""
+        
+        # Extract images
+        images = {}
+        if images_dict and isinstance(images_dict, dict):
+            if 'results' in images_dict:
+                for doc_key, doc_data in images_dict['results'].items():
+                    if 'images' in doc_data:
+                        images = doc_data['images']
+                        if 'md_content' in doc_data:
+                            md_content = doc_data['md_content']
+                        break
+            else:
+                images = images_dict
+        
+        return md_content, images
+
     def _parse_powerrag(self, filename: str, binary: bytes, 
                          config: Dict[str, Any] = None, doc: Any = None) -> List[Dict[str, Any]]:
         """
@@ -640,10 +872,13 @@ class PowerRAGParseService:
             {
                 "doc_id": "...",
                 "doc_name": "...",
-                "markdown": "...",
-                "markdown_length": 5000,
-                "images": {...},
-                "total_images": 2
+                "return_pages": false,
+                "pages": [
+                    {"page_num": -1, "content": "# 完整 Markdown 内容..."}
+                ],
+                "total_pages": 1,
+                "images": {"image_name.png": "base64...", ...},
+                "total_images": 1
             }
         """
         if config is None:
@@ -714,21 +949,38 @@ class PowerRAGParseService:
         else:
             raise ValueError("Must provide either doc_id or (filename, binary, format_type)")
         
-        # Parse to markdown
-        md_content, images = self._parse_to_markdown(
-            filename=filename,
-            binary=binary,
-            format_type=format_type,
-            config=config
-        )
-        
-        # Prepare result
-        result = {
-            "markdown": md_content,
-            "markdown_length": len(md_content),
-            "images": images,
-            "total_images": len(images) if images else 0
-        }
+        return_pages = config.get("return_pages", False)
+
+        if return_pages:
+            page_result = self.parse_to_markdown_by_page(
+                filename=filename,
+                binary=binary,
+                format_type=format_type,
+                config=config,
+            )
+            result = {
+                "return_pages": True,
+                "pages": page_result.get("pages", []),
+                "total_pages": page_result.get("total_pages", 0),
+                "images": page_result.get("images", {}),
+                "total_images": len(page_result.get("images", {})),
+            }
+        else:
+            md_content, images = self._parse_to_markdown(
+                filename=filename,
+                binary=binary,
+                format_type=format_type,
+                config=config
+            )
+            if not images:
+                images = {}
+            result = {
+                "return_pages": False,
+                "pages": [{"page_num": -1, "content": md_content}],
+                "total_pages": 1,
+                "images": images,
+                "total_images": len(images),
+            }
         
         if doc_id:
             result["doc_id"] = doc_id

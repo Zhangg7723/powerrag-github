@@ -103,8 +103,16 @@ result = client.document.parse_to_md(
         "enable_table": True
     }
 )
-print(f"Markdown: {result['markdown']}")
-print(f"Total images: {result['total_images']}")
+# 默认返回完整内容，pages 包含 1 个元素，page_num=-1
+print(f"Content: {result['pages'][0]['content'][:200]}")
+
+# 按页解析
+result = client.document.parse_to_md(
+    doc_id=docs[0]['id'],
+    config={"return_pages": True, "layout_recognize": "mineru"}
+)
+for page in result['pages']:
+    print(f"Page {page['page_num']}: {page['content'][:100]}")
 
 # 异步解析为 Markdown
 task_id = client.document.parse_to_md_async(
@@ -124,9 +132,16 @@ result = client.document.parse_to_md_upload(
     "document.pdf",
     config={"layout_recognize": "mineru"}
 )
-# 访问返回结果
-print(result['content'])  # Markdown 内容
-print(result['total_images'])  # 图片总数
+# 访问返回结果（统一 pages 格式）
+print(result['pages'][0]['content'])  # Markdown 内容
+
+# 按页上传解析
+result = client.document.parse_to_md_upload(
+    "document.pdf",
+    config={"return_pages": True, "layout_recognize": "mineru"}
+)
+for page in result['pages']:
+    print(f"Page {page['page_num']}: {page['content'][:100]}")
 
 # 从 URL 下载并解析（直接调用 API）
 import requests
@@ -141,9 +156,8 @@ response = requests.post(
     }
 )
 result = response.json()
-# 访问返回结果
-print(result['data']['content'])  # Markdown 内容
-print(result['data']['total_images'])  # 图片总数
+# 访问返回结果（统一 pages 格式）
+print(result['data']['pages'][0]['content'])  # Markdown 内容
 
 # 使用二进制数据解析（支持无扩展名文件）
 with open("document.pdf", "rb") as f:
@@ -155,7 +169,7 @@ result = client.document.parse_to_md_binary(
     config={"layout_recognize": "mineru"}
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 对于无扩展名的文件，使用 input_type='auto' 自动识别
 result = client.document.parse_to_md_binary(
@@ -164,7 +178,7 @@ result = client.document.parse_to_md_binary(
     # input_type='auto' 是默认值，会自动从二进制内容检测文件类型
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 或显式指定文件类型（使用具体扩展名）
 result = client.document.parse_to_md_binary(
@@ -173,7 +187,7 @@ result = client.document.parse_to_md_binary(
     input_type="pdf"  # 具体扩展名: 'pdf', 'docx', 'html', 'jpg' 等
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 ```
 
 ### 检索
@@ -211,6 +225,13 @@ PowerRAG SDK 提供了强大的文档解析为 Markdown 的功能，支持多种
 1. **同步解析**（适合小文档）：
 ```python
 result = client.document.parse_to_md(doc_id, config={...})
+# 访问 Markdown 内容
+print(result['pages'][0]['content'])
+
+# 按页解析
+result = client.document.parse_to_md(doc_id, config={"return_pages": True})
+for page in result['pages']:
+    print(f"Page {page['page_num']}: {page['content'][:100]}")
 ```
 
 2. **异步解析**（适合大文档）：
@@ -225,6 +246,7 @@ result = client.document.wait_for_parse_to_md(task_id, timeout=300)
 ```python
 # 上传本地文件
 result = client.document.parse_to_md_upload("file.pdf", config={...})
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 或使用 file_url 参数从URL下载（通过 config 传入）
 import requests
@@ -248,8 +270,8 @@ result = client.document.parse_to_md_binary(
     file_binary=binary_data,
     filename="document_no_extension"  # 无扩展名也可以
 )
-# 访问返回结果
-print(result['content'])  # Markdown 内容
+# 访问返回结果（统一 pages 格式）
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 或显式指定类型
 result = client.document.parse_to_md_binary(
@@ -257,14 +279,12 @@ result = client.document.parse_to_md_binary(
     filename="document",
     input_type="pdf"  # 具体扩展名: 'pdf', 'docx', 'html', 'jpg' 等
 )
-
 # 访问返回结果
-print(result['content'])  # Markdown 内容
-print(result['total_images'])  # 图片总数
-print(result['images'])  # 图片字典
+print(result['pages'][0]['content'])  # Markdown 内容
 ```
 
 **配置选项：**
+- `return_pages`: 是否按页返回（默认 `false`），设为 `true` 时每页独立返回
 - `layout_recognize`: 布局识别引擎 (`"mineru"` 或 `"dots_ocr"`)
 - `enable_ocr`: 是否启用 OCR
 - `enable_formula`: 是否识别公式
@@ -273,6 +293,13 @@ print(result['images'])  # 图片字典
 - `input_type`: 文件类型识别模式（默认: `'auto'`）
   - `'auto'`: 优先使用文件扩展名，无扩展名时自动检测（推荐）
   - 具体文件扩展名: `'pdf'`, `'docx'`, `'doc'`, `'xlsx'`, `'xls'`, `'pptx'`, `'ppt'`, `'html'`, `'htm'`, `'jpg'`, `'jpeg'`, `'png'` - 显式指定文件扩展名
+
+**统一返回格式：**
+- 所有 parse_to_md 接口统一返回 `pages` 数组 + `total_pages` + `images` + `total_images`
+- `return_pages=false`（默认）: `pages` 包含 1 个元素，`page_num=-1`，`content` 为完整文档内容
+- `return_pages=true`: `pages` 包含每页独立的 Markdown，`page_num` 从 1 开始
+- `images`: 文档中提取的图片（key 为图片名，value 为 base64 编码内容）
+- `total_images`: 提取的图片总数
 
 ### 结构化信息抽取
 
@@ -402,7 +429,7 @@ results = client.document.parse_to_chunk(
     config={"max_token": 512}  # 自定义配置
 )
 
-# 解析文档为 Markdown（同步）
+# 解析文档为 Markdown（同步，默认整体解析）
 result = client.document.parse_to_md(
     doc_id,
     config={
@@ -414,7 +441,15 @@ result = client.document.parse_to_md(
         "to_page": 100   # PDF结束页
     }
 )
-print(result['markdown'])
+print(result['pages'][0]['content'])  # 完整 Markdown 内容
+
+# 按页解析
+result = client.document.parse_to_md(
+    doc_id,
+    config={"return_pages": True}
+)
+for page in result['pages']:
+    print(f"Page {page['page_num']}: {page['content'][:100]}")
 
 # 解析文档为 Markdown（异步）
 task_id = client.document.parse_to_md_async(doc_id, config={...})
@@ -422,15 +457,16 @@ task_id = client.document.parse_to_md_async(doc_id, config={...})
 # 查询 parse_to_md 任务状态
 status = client.document.get_parse_to_md_status(task_id)
 if status["status"] == "success":
-    print(status["result"]["markdown"])
+    print(status["result"]["pages"][0]["content"])  # 新格式
+    print(status["result"]["markdown"])  # 兼容旧格式
 
 # 等待 parse_to_md 任务完成
 result = client.document.wait_for_parse_to_md(task_id, timeout=300)
 
 # 上传并解析为 Markdown（无需知识库）
 result = client.document.parse_to_md_upload("file.pdf", config={...})
-# 访问返回结果
-print(result['content'])  # Markdown 内容
+# 访问返回结果（统一 pages 格式）
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 使用 file_url 参数从 URL 下载并解析（直接调用 API）
 import requests
@@ -448,8 +484,8 @@ response = requests.post(
     }
 )
 result = response.json()
-# 访问返回结果
-print(result['data']['content'])  # Markdown 内容
+# 访问返回结果（统一 pages 格式）
+print(result['data']['pages'][0]['content'])  # Markdown 内容
 
 # 使用 file_url 并指定文件名
 response = requests.post(
@@ -466,7 +502,7 @@ response = requests.post(
 )
 result = response.json()
 # 访问返回结果
-print(result['data']['content'])  # Markdown 内容
+print(result['data']['pages'][0]['content'])  # Markdown 内容
 
 # 使用二进制数据解析为 Markdown
 with open("document.pdf", "rb") as f:
@@ -479,7 +515,7 @@ result = client.document.parse_to_md_binary(
     input_type="auto"  # 默认值，自动识别文件类型
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 无扩展名文件解析（自动检测文件类型）
 result = client.document.parse_to_md_binary(
@@ -488,7 +524,7 @@ result = client.document.parse_to_md_binary(
     # input_type='auto' 会从二进制内容自动检测 PDF/Office/HTML 等
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 显式指定文件类型（跳过自动检测）
 result = client.document.parse_to_md_binary(
@@ -497,7 +533,7 @@ result = client.document.parse_to_md_binary(
     input_type="pdf"  # 强制作为 PDF 处理
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 
 # 解析URL文档（同步等待）
 doc = client.document.parse_url(
@@ -851,8 +887,8 @@ md_result = client.document.parse_to_md(
     doc_id=doc_ids[0],
     config={"layout_recognize": "mineru"}
 )
-print(f"\nMarkdown length: {md_result['markdown_length']}")
-print(f"Total images: {md_result['total_images']}")
+print(f"\nMarkdown content: {md_result['pages'][0]['content'][:200]}")
+print(f"Total pages: {md_result['total_pages']}")
 
 # 8. 清理（如需要）
 # 删除特定文档
@@ -1217,7 +1253,7 @@ result = client.document.parse_to_md_binary(
     # input_type='auto' 是默认值，可以省略
 )
 # 访问返回结果
-print(result['content'])  # Markdown 内容
+print(result['pages'][0]['content'])  # Markdown 内容
 ```
 
 支持的 `input_type` 值：
@@ -1246,7 +1282,7 @@ response = requests.post(
     }
 )
 result = response.json()
-print(result['data']['content'])
+print(result['data']['pages'][0]['content'])
 ```
 
 **方式 2：指定文件名（适用于无扩展名URL）**
@@ -1284,9 +1320,8 @@ response = requests.post(
     }
 )
 result = response.json()
-# 访问返回结果
-print(result['data']['content'])  # Markdown 内容
-print(result['data']['total_images'])  # 图片总数
+# 访问返回结果（统一 pages 格式）
+print(result['data']['pages'][0]['content'])  # Markdown 内容
 ```
 
 **配置参数说明：**
