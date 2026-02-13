@@ -510,6 +510,7 @@ export default {
       profile: 'Hồ sơ',
       avatar: 'Avatar',
       profileDescription: 'Cập nhật ảnh và thông tin cá nhân của bạn tại đây.',
+      aliding_kbDescription: 'Kết nối kho kiến thức AliDing để nhập tài liệu.',
       maxTokens: 'Token tối đa',
       maxTokensMessage: 'Token tối đa là bắt buộc',
       maxTokensTip:

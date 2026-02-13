@@ -49,7 +49,8 @@ from common.data_source import (
     WebDAVConnector,
     AirtableConnector,
     AsanaConnector,
-    ImapConnector
+    ImapConnector,
+    AliDingKBConnector
 )
 from common.constants import FileSource, TaskStatus
 from common.data_source.config import INDEX_BATCH_SIZE
@@ -981,6 +982,55 @@ class IMAP(SyncBase):
         )
         return document_batches()
 
+class AliDingKB(SyncBase):
+    SOURCE_NAME: str = FileSource.ALIDING_KB
+
+    async def _generate(self, task: dict):
+        self.connector = AliDingKBConnector(
+            public_account_id=self.conf.get("public_account_id"),
+            kb_urls=self.conf.get("kb_urls") or self.conf.get("kb_url"),
+            batch_size=self.conf.get("batch_size", INDEX_BATCH_SIZE),
+            recall_as_file=bool(self.conf.get("recall_as_file", False)),
+            recall_library_with_docs=bool(self.conf.get("recall_library_with_docs", True)),
+        )
+
+        credentials = self.conf.get("credentials", {})
+        if not credentials.get("access_key_id") or not credentials.get("access_key_secret"):
+            raise ValueError("Missing access_key_id/access_key_secret for AliDing KB.")
+
+        self.connector.load_credentials(
+            {
+                "access_key_id": credentials.get("access_key_id"),
+                "access_key_secret": credentials.get("access_key_secret"),
+            }
+        )
+
+        if task.get("reindex") == "1" or not task.get("poll_range_start"):
+            document_generator = self.connector.load_from_state()
+            begin_info = "totally"
+        else:
+            poll_start = task.get("poll_range_start")
+            if poll_start is None:
+                document_generator = self.connector.load_from_state()
+                begin_info = "totally"
+            else:
+                document_generator = self.connector.poll_source(
+                    poll_start.timestamp(),
+                    datetime.now(timezone.utc).timestamp(),
+                )
+                begin_info = f"from {poll_start}"
+
+        logging.info(
+            "Connect to AliDing KB: public_account_id(%s) %s",
+            self.conf.get("public_account_id"),
+            begin_info,
+        )
+        async def async_wrapper():
+            for batch in document_generator:
+                yield batch
+
+        return async_wrapper()
+
 
 class Gitlab(SyncBase):
     SOURCE_NAME: str = FileSource.GITLAB
@@ -1045,6 +1095,7 @@ func_factory = {
     FileSource.IMAP: IMAP,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
+    FileSource.ALIDING_KB: AliDingKB,
 }
 
 

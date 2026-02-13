@@ -757,6 +757,8 @@ export default {
         'Подключите Asana и синхронизируйте файлы из рабочего пространства.',
       imapDescription:
         'Подключите почтовый ящик IMAP для синхронизации писем из указанных почтовых ящиков (mailboxes) с целью поиска и анализа знаний.',
+      aliding_kbDescription:
+        'Подключите базу знаний AliDing для импорта документов.',
       google_driveDescription:
         'Подключите ваш Google Drive через OAuth и синхронизируйте определенные папки или диски.',
       gmailDescription:

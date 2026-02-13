@@ -945,6 +945,8 @@ Example: Virtual Hosted Style`,
         'Connect to Asana and synchronize files from a specified workspace.',
       imapDescription:
         'Connect to your IMAP mailbox to sync emails for knowledge retrieval.',
+      aliding_kbDescription:
+        'Connect your AliDing (Alibaba Ding) knowledge base to import documents.',
       dropboxAccessTokenTip:
         'Generate a long-lived access token in the Dropbox App Console with files.metadata.read, files.content.read, and sharing.read scopes.',
       moodleDescription:

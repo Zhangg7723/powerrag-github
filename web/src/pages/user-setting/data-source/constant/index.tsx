@@ -29,6 +29,7 @@ export enum DataSourceKey {
   ASANA = 'asana',
   IMAP = 'imap',
   GITHUB = 'github',
+  ALIDING_KB = 'aliding_kb',
   //   SHAREPOINT = 'sharepoint',
   //   SLACK = 'slack',
   //   TEAMS = 'teams',
@@ -132,6 +133,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'IMAP',
       description: t(`setting.${DataSourceKey.IMAP}Description`),
       icon: <SvgIcon name={'data-source/imap'} width={38} />,
+    },
+    [DataSourceKey.ALIDING_KB]: {
+      name: 'AliDing KB',
+      description: t(`setting.${DataSourceKey.ALIDING_KB}Description`),
+      icon: <SvgIcon name={'data-source/aliding'} width={38} />,
     },
   };
 };
@@ -822,6 +828,33 @@ export const DataSourceFormFields = {
       required: false,
     },
   ],
+  [DataSourceKey.ALIDING_KB]: [
+    {
+      label: 'Access Key ID',
+      name: 'config.credentials.access_key_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Access Key Secret',
+      name: 'config.credentials.access_key_secret',
+      type: FormFieldType.Password,
+      required: true,
+    },
+    {
+      label: 'Public Account ID',
+      name: 'config.public_account_id',
+      type: FormFieldType.Text,
+      required: true,
+    },
+    {
+      label: 'Knowledge Base URLs',
+      name: 'config.kb_urls',
+      type: FormFieldType.Textarea,
+      required: true,
+      placeholder: 'https://...\\nhttps://...',
+    },
+  ],
 };
 
 export const DataSourceFormDefaultValues = {
@@ -1073,6 +1106,18 @@ export const DataSourceFormDefaultValues = {
       credentials: {
         imap_username: '',
         imap_password: '',
+      },
+    },
+  },
+  [DataSourceKey.ALIDING_KB]: {
+    name: '',
+    source: DataSourceKey.ALIDING_KB,
+    config: {
+      public_account_id: '',
+      kb_urls: '',
+      credentials: {
+        access_key_id: '',
+        access_key_secret: '',
       },
     },
   },

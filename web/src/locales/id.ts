@@ -461,6 +461,8 @@ export default {
       profile: 'Profil',
       avatar: 'Avatar',
       profileDescription: 'Perbarui foto dan detail pribadi Anda di sini.',
+      aliding_kbDescription:
+        'Hubungkan basis pengetahuan AliDing Anda untuk mengimpor dokumen.',
       maxTokens: 'Token Maksimum',
       maxTokensMessage: 'Token Maksimum diperlukan',
       maxTokensTip:

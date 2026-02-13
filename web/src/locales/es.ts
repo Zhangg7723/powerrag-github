@@ -284,6 +284,8 @@ export default {
       profile: 'Perfil',
       avatar: 'Avatar',
       profileDescription: 'Actualiza tu foto y tus datos personales aquí.',
+      aliding_kbDescription:
+        'Conecta tu base de conocimiento de AliDing para importar documentos.',
       maxTokens: 'Máximo de tokens',
       maxTokensMessage: 'El máximo de tokens es obligatorio',
       maxTokensTip:
