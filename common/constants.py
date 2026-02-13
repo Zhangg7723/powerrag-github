@@ -136,6 +136,7 @@ class FileSource(StrEnum):
     GITHUB = "github"
     GITLAB = "gitlab"
     IMAP = "imap"
+    ALIDING_KB = "aliding_kb"
 
 class PipelineTaskType(StrEnum):
     PARSE = "Parse"

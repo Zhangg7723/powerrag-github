@@ -456,6 +456,8 @@ export default {
       profile: 'Perfil',
       avatar: 'Avatar',
       profileDescription: 'Atualize sua foto e detalhes pessoais aqui.',
+      aliding_kbDescription:
+        'Conecte sua base de conhecimento do AliDing para importar documentos.',
       maxTokens: 'Máximo de Tokens',
       maxTokensMessage: 'Máximo de Tokens é obrigatório',
       maxTokensTip: `Isso define o comprimento máximo da saída do modelo, medido em número de tokens (palavras ou partes de palavras). O padrão é 512. Se desativado, você remove o limite máximo de tokens, permitindo que o modelo determine o número de tokens em suas respostas.`,

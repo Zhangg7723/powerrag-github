@@ -468,6 +468,8 @@ export default {
       avatarTip: 'Ceci sera affiché sur votre profil.',
       profileDescription:
         'Mettez à jour votre photo et vos informations personnelles ici.',
+      aliding_kbDescription:
+        'Connectez votre base de connaissances AliDing pour importer des documents.',
       maxTokens: 'Nombre maximum de tokens',
       maxTokensMessage: 'Le nombre maximum de tokens est requis',
       maxTokensTip: `Cela définit la longueur maximale de la sortie du modèle, mesurée en nombre de tokens (mots ou morceaux de mots). Par défaut à 512. Si désactivé, la limite maximale de tokens est levée, permettant au modèle de déterminer le nombre de tokens dans ses réponses.`,

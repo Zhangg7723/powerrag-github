@@ -198,6 +198,8 @@ class SyncLogsService(CommonService):
     @classmethod
     def duplicate_and_parse(cls, kb, docs, tenant_id, src, auto_parse=True):
         from api.db.services.file_service import FileService
+        from api.db.db_models import Document
+        from common.constants import FileSource
         if not docs:
             return None
 
@@ -208,18 +210,57 @@ class SyncLogsService(CommonService):
             def read(self) -> bytes:
                 return self.blob
 
+        def build_filename(doc: dict) -> str:
+            name = doc.get("semantic_identifier") or ""
+            extension = doc.get("extension") or ""
+            if extension and not name.lower().endswith(extension.lower()):
+                name = f"{name}{extension}"
+            return name
+
+        if src.startswith(f"{FileSource.ALIDING_KB}/"):
+            existing_map: dict[str, str] = {}
+            query = Document.select(Document.id, Document.meta_fields).where(
+                (Document.kb_id == kb.id) & (Document.source_type == src)
+            )
+            for row in query:
+                meta = row.meta_fields or {}
+                key = meta.get("aliding_doc_id") or meta.get("dingtalk_doc_id") or meta.get("url")
+                if key:
+                    existing_map[str(key)] = row.id
+
+            if existing_map:
+                seen_keys: set[str] = set()
+                filtered_docs: list[dict] = []
+                doc_ids_to_delete: list[str] = []
+                for d in docs:
+                    meta = d.get("metadata") or {}
+                    key = meta.get("aliding_doc_id") or meta.get("dingtalk_doc_id") or meta.get("url")
+                    key = str(key) if key else ""
+                    if key and key in seen_keys:
+                        continue
+                    if key:
+                        seen_keys.add(key)
+                    if key and key in existing_map:
+                        doc_ids_to_delete.append(existing_map[key])
+                    filtered_docs.append(d)
+                docs = filtered_docs
+                if doc_ids_to_delete:
+                    FileService.delete_docs(doc_ids_to_delete, tenant_id)
+                if not docs:
+                    return [], []
+
         errs = []
-        files = [FileObj(filename=d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else ""), blob=d["blob"]) for d in docs]
+        doc_items = [(d, build_filename(d)) for d in docs]
+        files = [FileObj(filename=filename, blob=doc["blob"]) for doc, filename in doc_items]
         doc_ids = []
         err, doc_blob_pairs = FileService.upload_document(kb, files, tenant_id, src)
         errs.extend(err)
 
         # Create a mapping from filename to metadata for later use
         metadata_map = {}
-        for d in docs:
-            if d.get("metadata"):
-                filename = d["semantic_identifier"]+(f"{d['extension']}" if d["semantic_identifier"][::-1].find(d['extension'][::-1])<0 else "")
-                metadata_map[filename] = d["metadata"]
+        for doc, filename in doc_items:
+            if doc.get("metadata"):
+                metadata_map[filename] = doc["metadata"]
 
         kb_table_num_map = {}
         for doc, _ in doc_blob_pairs:
