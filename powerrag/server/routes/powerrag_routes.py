@@ -1187,13 +1187,13 @@ async def parse_to_md_upload(tenant_id):
                     "message": f"Request timeout while downloading file from URL. Please try again or increase timeout."
                 }), 408
             except requests.exceptions.ConnectionError as e:
-                # ConnectionError includes DNS resolution failures, invalid URLs, etc.
-                # Return 400 (Bad Request) instead of 503 (Service Unavailable) for invalid URLs
+                # ConnectionError: DNS failure, invalid URL, network unreachable, connection refused.
+                # 502 (Bad Gateway) indicates we could not reach the upstream URL.
                 logger.error(f"Connection error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
-                    "code": 400,
+                    "code": 502,
                     "message": f"Failed to download file from URL: {str(e)}"
-                }), 400
+                }), 502
             except requests.exceptions.HTTPError as e:
                 logger.error(f"HTTP error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
@@ -1201,11 +1201,12 @@ async def parse_to_md_upload(tenant_id):
                     "message": f"HTTP error while downloading file: {str(e)}"
                 }), 502
             except requests.exceptions.RequestException as e:
+                # Catch-all for other request errors (e.g. TooManyRedirects)
                 logger.error(f"Request error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
-                    "code": 400,
+                    "code": 502,
                     "message": f"Failed to download file from URL: {str(e)}"
-                }), 400
+                }), 502
             except Exception as e:
                 logger.error(f"Unexpected error downloading file from URL: {file_url}. Error: {e}", exc_info=True)
                 return jsonify({
@@ -1409,11 +1410,11 @@ async def split_text(tenant_id):
 async def split_file(tenant_id):
     """
     Split file into chunks using rag/app chunking methods
-    
-    Supports all ParserType methods: naive, qa, book, laws, paper, manual, 
+
+    Supports all ParserType methods: naive, qa, book, laws, paper, manual,
     presentation, table, resume, picture, one, audio, email, tag, knowledge_graph,
-    title, regex, smart
-    
+    title, regex, smart.
+
     Request JSON:
     {
         "file_path": "/path/to/document.pdf",  # or use file_url
@@ -1492,14 +1493,20 @@ async def split_file(tenant_id):
             binary = None
         
         service = PowerRAGSplitService()
-        result = service.split_file(filename=filename, binary=binary, parser_id=parser_id, config=config)
-        
+        result = service.split_file(
+            filename=filename,
+            binary=binary,
+            parser_id=parser_id,
+            config=config,
+            tenant_id=tenant_id,
+        )
+
         return jsonify({
             "code": 0,
             "data": result,
             "message": "success"
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Split file error: {e}", exc_info=True)
         return jsonify({
@@ -1513,11 +1520,11 @@ async def split_file(tenant_id):
 async def split_file_upload(tenant_id):
     """
     Split uploaded file into chunks using rag/app chunking methods
-    
-    Supports all ParserType methods: naive, qa, book, laws, paper, manual, 
+
+    Supports all ParserType methods: naive, qa, book, laws, paper, manual,
     presentation, table, resume, picture, one, audio, email, tag, knowledge_graph,
-    title, regex, smart
-    
+    title, regex, smart.
+
     Request (multipart/form-data):
     - file: File to split (required)
     - parser_id: Parser ID (optional, default: "naive")
@@ -1583,14 +1590,20 @@ async def split_file_upload(tenant_id):
             }), 400
         
         service = PowerRAGSplitService()
-        result = service.split_file(filename=filename, binary=binary, parser_id=parser_id, config=config)
-        
+        result = service.split_file(
+            filename=filename,
+            binary=binary,
+            parser_id=parser_id,
+            config=config,
+            tenant_id=tenant_id,
+        )
+
         return jsonify({
             "code": 0,
             "data": result,
             "message": "success"
         }), 200
-        
+
     except Exception as e:
         logger.error(f"Split file upload error: {e}", exc_info=True)
         return jsonify({

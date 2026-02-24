@@ -14,8 +14,9 @@
 #  limitations under the License.
 #
 
-from typing import Optional, List, Dict, Any, Union
+import json
 from pathlib import Path
+from typing import Optional, List, Dict, Any, Union
 from .chunk import ChunkInfo
 
 
@@ -413,7 +414,6 @@ class ChunkManager:
         }
         
         if config:
-            import json
             form_data["config"] = json.dumps(config)
         
         url = "/powerrag/split/file/upload"

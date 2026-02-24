@@ -34,6 +34,12 @@ from powerrag.utils.nlp_utils import num_tokens_from_string
 
 logger = logging.getLogger(__name__)
 
+
+def _dummy_callback(prog=None, msg=""):
+    """No-op callback for parser progress; used when progress reporting is not needed."""
+    pass
+
+
 # Chunker Factory - mapping parser_id to chunking module
 CHUNKER_FACTORY = {}
 
@@ -117,11 +123,6 @@ class PowerRAGSplitService:
             # Get chunker based on parser_id
             chunker = self._get_chunker(parser_id)
             logger.info(f"Using chunker: {parser_id} for text splitting")
-
-            # Prepare callback
-            def dummy(prog=None, msg=""):
-                """Dummy callback for progress"""
-                pass
 
             # Build parser_config based on parser_id
             if parser_id == ParserType.TITLE.value:
@@ -246,16 +247,17 @@ class PowerRAGSplitService:
                     logger.error("Failed to import naive chunker, file splitting will not work")
                     self._file_chunker_factory = {}
 
-    def split_file(self, filename: str = None, binary: bytes = None, parser_id: str = "naive", 
-                   config: Dict[str, Any] = None) -> Dict[str, Any]:
+    def split_file(self, filename: str = None, binary: bytes = None, parser_id: str = "naive",
+                   config: Dict[str, Any] = None, tenant_id: str = None) -> Dict[str, Any]:
         """
         Split file into chunks using rag/app chunking methods
-        
+
         Args:
             filename: File path (optional if binary is provided)
             binary: File binary content (optional if filename is provided)
             parser_id: Parser/chunker ID (e.g., "naive", "book", "title")
             config: Chunking configuration (optional)
+            tenant_id: Tenant ID (required for audio and picture parsers; used for LLM model lookup)
             
         Returns:
             Dict containing chunks and metadata
@@ -305,11 +307,6 @@ class PowerRAGSplitService:
             if not chunker_module:
                 raise ValueError(f"Chunker '{parser_id}' not found and naive chunker not available")
         
-        # Prepare callback
-        def dummy(prog=None, msg=""):
-            """Dummy callback for progress"""
-            pass
-        
         # Build parser_config from config
         parser_config = config.copy()
         parser_config.setdefault("chunk_token_num", 512)
@@ -318,15 +315,16 @@ class PowerRAGSplitService:
         # Build kwargs
         kwargs = {
             "lang": config.get("lang", "Chinese"),
-            "callback": dummy,
+            "callback": _dummy_callback,
             "parser_config": parser_config,
             "from_page": config.get("from_page", 0),
             "to_page": config.get("to_page", 100000),
         }
-        
+
+        if tenant_id:
+            kwargs["tenant_id"] = tenant_id
+
         # Add optional fields
-        if config.get("tenant_id"):
-            kwargs["tenant_id"] = config["tenant_id"]
         if config.get("kb_id"):
             kwargs["kb_id"] = config["kb_id"]
         if config.get("doc_id"):

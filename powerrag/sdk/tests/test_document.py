@@ -14,6 +14,8 @@
 #  limitations under the License.
 #
 
+import time
+
 import pytest
 from powerrag.sdk import PowerRAGClient
 
@@ -217,20 +219,33 @@ class TestDocumentParse:
     
     def test_cancel_parse(self, client: PowerRAGClient, kb_id: str, test_file_path: str):
         """测试取消解析"""
-        import time
         uploaded_docs = client.document.upload(kb_id, test_file_path)
         doc_id = uploaded_docs[0]["id"]
-        
+
         try:
             client.document.parse_to_chunk(kb_id, [doc_id], wait=False)
-            # Wait a bit for parsing to start
-            time.sleep(0.5)
+
+            # Poll for parsing to start (RUNNING or SCHEDULE), timeout 10s
+            for _ in range(100):
+                doc = client.document.get(kb_id, doc_id)
+                if doc["run"] in ["RUNNING", "1", "SCHEDULE"]:
+                    break
+                time.sleep(0.1)
+            else:
+                pytest.fail("Parsing did not start within 10s")
+
             client.document.cancel_parse(kb_id, [doc_id])
-            
-            # Wait a bit for status update
-            time.sleep(0.5)
-            doc = client.document.get(kb_id, doc_id)
-            assert doc["run"] in ["CANCEL", "UNSTART"]
+
+            # Poll for cancel to propagate, timeout 5s
+            for _ in range(50):
+                doc = client.document.get(kb_id, doc_id)
+                if doc["run"] in ["CANCEL", "UNSTART", "2", "0"]:
+                    break
+                time.sleep(0.1)
+            else:
+                pytest.fail("Cancel did not propagate within 5s")
+
+            assert doc["run"] in ["CANCEL", "UNSTART", "2", "0"]
         finally:
             client.document.delete(kb_id, [doc_id])
 
@@ -959,12 +974,12 @@ class TestDocumentFileUrl:
             }
         )
         
-        # 应该返回 400 错误
-        assert response.status_code == 400
+        # 无效 URL（连接失败）返回 502 (Bad Gateway)
+        assert response.status_code == 502
         result = response.json()
-        assert result["code"] == 400
+        assert result["code"] == 502
         assert "Failed to download" in result["message"]
-    
+
     def test_parse_cannot_provide_both_file_and_url(self, client: PowerRAGClient, tmp_path):
         """测试不能同时提供 file 和 file_url"""
         import requests

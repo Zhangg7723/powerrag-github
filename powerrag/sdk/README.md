@@ -387,7 +387,6 @@ for chunk in result['chunks']:
 - 基础方法: `naive`, `title`, `regex`, `smart`
 - 专业方法: `qa`, `book`, `laws`, `paper`, `manual`, `presentation`
 - 特殊格式: `table`, `resume`, `picture`, `one`, `email`
-- 高级方法: `knowledge_graph`
 
 **配置参数说明：**
 - `chunk_token_num` (int): 目标分块大小（tokens），默认 512

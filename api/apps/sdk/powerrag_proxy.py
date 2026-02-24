@@ -21,8 +21,11 @@ PowerRAG API Proxy
 这样 SDK 可以通过主 RAGFlow 服务访问 PowerRAG 功能，无需直接连接到 PowerRAG server
 """
 
-import os
+import asyncio
 import logging
+import os
+from io import BytesIO
+
 import httpx
 from quart import request, jsonify
 from api.utils.api_utils import token_required, get_error_data_result
@@ -91,8 +94,6 @@ async def _forward_request(method: str, endpoint: str, tenant_id: str = None):
                 if files_dict:
                     # 保留文件名信息！重要：不能直接 dict(files_dict)
                     # 因为会丢失文件名。需要构造 httpx 期望的格式
-                    import asyncio
-                    from io import BytesIO
                     files = {}
                     for field_name, file_storage in files_dict.items():
                         # 在线程中读取文件内容（避免阻塞事件循环）
