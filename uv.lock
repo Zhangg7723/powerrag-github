@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12, <3.15"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'darwin'",
@@ -12,6 +12,9 @@ resolution-markers = [
     "(python_full_version == '3.13.*' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version == '3.13.*' and sys_platform != 'darwin' and sys_platform != 'linux')",
     "(python_full_version < '3.13' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.13' and sys_platform != 'darwin' and sys_platform != 'linux')",
 ]
+
+[options]
+prerelease-mode = "allow"
 
 [[package]]
 name = "absl-py"
@@ -2657,8 +2660,8 @@ wheels = [
 
 [[package]]
 name = "graspologic"
-version = "0.1.dev847+g38e680cab"
-source = { git = "https://github.com/yuzhichang/graspologic.git?rev=38e680cab72bc9fb68a7992c3bcc2d53b24e42fd#38e680cab72bc9fb68a7992c3bcc2d53b24e42fd" }
+version = "3.4.5.dev2"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
     { name = "anytree" },
     { name = "beartype" },
@@ -2677,6 +2680,10 @@ dependencies = [
     { name = "statsmodels" },
     { name = "typing-extensions" },
     { name = "umap-learn" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cf/d9/3a20586ec6aa7097ea58e6b54a3b7170ae4445872f23d085460611b2a55b/graspologic-3.4.5.dev2.tar.gz", hash = "sha256:0226945c5e5ee31e1dec4e085f365577ab059e498ba842f455211fe35322c026", size = 6111760, upload-time = "2025-11-25T18:20:11.751Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bf/d2/2752eeba482c6adb7697db70ad47c79c9c7f6ba030ff8bb30b1b1ef064ef/graspologic-3.4.5.dev2-py3-none-any.whl", hash = "sha256:eb1ec49fea530f04aa22ac40d5e89b8511141ea1c9e0d577816bbf1c20aade68", size = 5201199, upload-time = "2025-11-25T18:20:10.112Z" },
 ]
 
 [[package]]
@@ -6495,7 +6502,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.41.0,<2.0.0" },
     { name = "google-generativeai", specifier = ">=0.8.1,<0.9.0" },
     { name = "google-search-results", specifier = "==2.4.2" },
-    { name = "graspologic", git = "https://github.com/yuzhichang/graspologic.git?rev=38e680cab72bc9fb68a7992c3bcc2d53b24e42fd" },
+    { name = "graspologic", specifier = ">=3.4.5.dev2" },
     { name = "groq", specifier = "==0.9.0" },
     { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },

@@ -154,7 +154,10 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## Development Guide
 
-> **TODO**: Development guide content to be added
+For developers who want to build and run PowerRAG from source code:
+
+- **[Developer Setup Guide](docs/developer-setup-guide.md)**: Complete guide for deploying PowerRAG from source code
+
 
 ---
 

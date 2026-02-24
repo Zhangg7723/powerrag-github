@@ -14,7 +14,7 @@ load_env_file() {
         echo "Loading environment variables from: $env_file"
         # Source the .env file
         set -a
-        source "$env_file" 
+        source "$env_file"
         set +a
     else
         echo "Warning: .env file not found at: $env_file"
@@ -24,12 +24,25 @@ load_env_file() {
 # Load environment variables
 load_env_file
 
+# Get the project root directory (parent of docker directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
+
 # Unset HTTP proxies that might be set by Docker daemon
 export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-export PYTHONPATH=$(pwd)
+export PYTHONPATH="$PROJECT_ROOT"
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
-JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
+
+# Try to find jemalloc, but don't fail if not found
+JEMALLOC_PATH=""
+if command -v pkg-config >/dev/null 2>&1; then
+    JEMALLOC_LIBDIR=$(pkg-config --variable=libdir jemalloc 2>/dev/null || echo "")
+    if [ -n "$JEMALLOC_LIBDIR" ] && [ -f "$JEMALLOC_LIBDIR/libjemalloc.so" ]; then
+        JEMALLOC_PATH="$JEMALLOC_LIBDIR/libjemalloc.so"
+    fi
+fi
 
 PY=python3
 
@@ -48,7 +61,12 @@ STOP=false
 PIDS=()
 
 # Set the path to the NLTK data directory
-export NLTK_DATA="./nltk_data"
+export NLTK_DATA="$PROJECT_ROOT/nltk_data"
+
+# Set additional environment variables for OceanBase
+export DOC_ENGINE=${DOC_ENGINE:-oceanbase}
+export STORAGE_IMPL=${STORAGE_IMPL:-OPENDAL}
+export CACHE_TYPE=${CACHE_TYPE:-oceanbase}
 
 # Function to handle termination signals
 cleanup() {
@@ -73,7 +91,11 @@ task_exe(){
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
-        LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$task_id"
+        if [ -n "$JEMALLOC_PATH" ]; then
+            LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py "$task_id"
+        else
+            $PY rag/svr/task_executor.py "$task_id"
+        fi
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "task_executor.py for task $task_id exited successfully."
@@ -114,6 +136,29 @@ run_server(){
     fi
 }
 
+# Function to execute sync_data_source with retry logic
+run_sync_data_source(){
+    local retry_count=0
+    while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
+        echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
+        $PY rag/svr/sync_data_source.py
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 0 ]; then
+            echo "sync_data_source.py exited successfully."
+            break
+        else
+            echo "sync_data_source.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            retry_count=$((retry_count + 1))
+            sleep 2
+        fi
+    done
+
+    if [ $retry_count -ge $MAX_RETRIES ]; then
+        echo "sync_data_source.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        cleanup
+    fi
+}
+
 # Start task executors
 for ((i=0;i<WS;i++))
 do
@@ -123,6 +168,10 @@ done
 
 # Start the main server
 run_server &
+PIDS+=($!)
+
+# Start data source sync service (required for AliDing KB, Notion, Confluence, etc.)
+run_sync_data_source &
 PIDS+=($!)
 
 # Wait for all background processes to finish
