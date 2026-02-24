@@ -806,7 +806,7 @@ async def parse_to_md(tenant_id):
     
     说明:
     - return_pages=false (默认): pages 包含 1 个元素，page_num=-1，content 为完整文档内容
-    - return_pages=true: pages 包含每页独立的 Markdown，page_num 从 1 开始
+    - return_pages=true: pages 包含每页独立的 Markdown，page_num 从 0 开始
     - images: 文档中提取的图片（key 为图片名，value 为 base64 编码内容）
     """
     try:
@@ -1138,7 +1138,7 @@ async def parse_to_md_upload(tenant_id):
     
     说明:
     - return_pages=false (默认): pages 包含 1 个元素，page_num=-1，content 为完整文档内容
-    - return_pages=true: pages 包含每页独立的 Markdown，page_num 从 1 开始
+    - return_pages=true: pages 包含每页独立的 Markdown，page_num 从 0 开始
     - images: 文档中提取的图片（key 为图片名，value 为 base64 编码内容）
     """
     try:

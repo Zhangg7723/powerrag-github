@@ -397,8 +397,8 @@ class PowerRAGParseService:
             Dict containing:
             {
                 "pages": [
-                    {"page_num": 1, "content": "# Page 1 markdown..."},
-                    {"page_num": 2, "content": "# Page 2 markdown..."},
+                    {"page_num": 0, "content": "# Page 1 markdown..."},
+                    {"page_num": 1, "content": "# Page 2 markdown..."},
                     ...
                 ],
                 "total_pages": N,
@@ -415,7 +415,7 @@ class PowerRAGParseService:
             try:
                 md_content = binary.decode('utf-8')
                 return {
-                    "pages": [{"page_num": 1, "content": md_content}],
+                    "pages": [{"page_num": 0, "content": md_content}],
                     "total_pages": 1,
                     "images": {},
                     "filename": filename
@@ -441,7 +441,7 @@ class PowerRAGParseService:
             logger.info(f"Parsing image as single page: {filename}")
             md_content, images = self._parse_to_markdown(filename, binary, format_type, config)
             return {
-                "pages": [{"page_num": 1, "content": md_content}],
+                "pages": [{"page_num": 0, "content": md_content}],
                 "total_pages": 1,
                 "images": images if images else {},
                 "filename": filename
@@ -499,7 +499,7 @@ class PowerRAGParseService:
         
         for page_idx in range(from_page, to_page):
             try:
-                page_num = page_idx + 1  # 1-based page number
+                page_num = page_idx  # 0-based page number
                 logger.info(f"Parsing page {page_num}/{to_page}")
                 
                 # Parse single page
@@ -526,7 +526,7 @@ class PowerRAGParseService:
             except Exception as e:
                 logger.warning(f"Error parsing page {page_idx + 1}: {e}")
                 pages.append({
-                    "page_num": page_idx + 1,
+                    "page_num": page_idx,
                     "content": "",
                     "error": str(e)
                 })

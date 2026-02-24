@@ -644,7 +644,7 @@ class DocumentManager:
         
         支持通过 config 中的 return_pages 参数控制返回格式：
         - return_pages=false (默认): 返回完整的 Markdown 内容，pages 包含 1 个元素，page_num=-1
-        - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容，page_num 从 1 开始
+        - return_pages=true: 按页返回，每页包含页码和对应的 Markdown 内容，page_num 从 0 开始
         
         支持的文件格式:
         - PDF (.pdf)
@@ -687,8 +687,8 @@ class DocumentManager:
                 "doc_name": "...",
                 "return_pages": true,
                 "pages": [
-                    {"page_num": 1, "content": "# 第1页内容..."},
-                    {"page_num": 2, "content": "# 第2页内容..."}
+                    {"page_num": 0, "content": "# 第1页内容..."},
+                    {"page_num": 1, "content": "# 第2页内容..."}
                 ],
                 "total_pages": N,
                 "images": {"img_001.png": "base64...", ...},

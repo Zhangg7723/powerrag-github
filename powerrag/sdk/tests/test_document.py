@@ -318,7 +318,7 @@ class TestDocumentParseToMD:
             for page in result["pages"]:
                 assert "page_num" in page
                 assert "content" in page
-                assert page["page_num"] >= 1
+                assert page["page_num"] >= 0
         finally:
             client.document.delete(kb_id, [doc_id])
     
@@ -441,7 +441,7 @@ class TestDocumentParseToMDAsync:
             for page in result["result"]["pages"]:
                 assert "page_num" in page
                 assert "content" in page
-                assert page["page_num"] >= 1
+                assert page["page_num"] >= 0
         finally:
             client.document.delete(kb_id, [doc_id])
     
