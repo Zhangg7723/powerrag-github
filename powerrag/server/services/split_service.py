@@ -289,8 +289,13 @@ class PowerRAGSplitService:
         
         if filename and not binary:
             # Read file from path
-            with open(filename, "rb") as f:
-                binary = f.read()
+            try:
+                with open(filename, "rb") as f:
+                    binary = f.read()
+            except FileNotFoundError as e:
+                raise FileNotFoundError(
+                    f"Failed to open file '{filename}' for splitting"
+                ) from e
         
         if not filename:
             # Generate a temporary filename from binary or use default
