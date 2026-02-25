@@ -21,8 +21,11 @@ PowerRAG API Proxy
 这样 SDK 可以通过主 RAGFlow 服务访问 PowerRAG 功能，无需直接连接到 PowerRAG server
 """
 
-import os
+import asyncio
 import logging
+import os
+from io import BytesIO
+
 import httpx
 from quart import request, jsonify
 from api.utils.api_utils import token_required, get_error_data_result
@@ -93,10 +96,15 @@ async def _forward_request(method: str, endpoint: str, tenant_id: str = None):
                     # 因为会丢失文件名。需要构造 httpx 期望的格式
                     files = {}
                     for field_name, file_storage in files_dict.items():
-                        # httpx 期望格式: (filename, content, content_type)
+                        # 在线程中读取文件内容（避免阻塞事件循环）
+                        # httpx 期望文件对象或元组格式
+                        # 使用 BytesIO 将 bytes 包装成文件对象
+                        file_content = await asyncio.to_thread(file_storage.read)
+                        # httpx 期望格式: (filename, file_object, content_type) 或 (filename, file_object)
+                        file_obj = BytesIO(file_content)
                         files[field_name] = (
                             file_storage.filename,
-                            file_storage.read(),
+                            file_obj,
                             file_storage.content_type or 'application/octet-stream'
                         )
             except Exception:
@@ -591,4 +599,38 @@ async def parse_to_md_upload_proxy(tenant_id):
         description: Parse to markdown result.
     """
     return await _forward_request("POST", "/parse_to_md/upload", tenant_id)
+
+
+@manager.route("/powerrag/split/file", methods=["POST"])  # noqa: F821
+@token_required
+async def split_file_proxy(tenant_id):
+    """
+    代理 split/file API 请求到 PowerRAG server
+    
+    支持所有ParserType方法对文件进行切片（使用文件路径或URL）
+    
+    ---
+    tags:
+      - PowerRAG Proxy
+    security:
+      - ApiKeyAuth: []
+    """
+    return await _forward_request("POST", "/split/file", tenant_id)
+
+
+@manager.route("/powerrag/split/file/upload", methods=["POST"])  # noqa: F821
+@token_required
+async def split_file_upload_proxy(tenant_id):
+    """
+    代理 split/file/upload API 请求到 PowerRAG server
+    
+    上传文件并切片，支持所有ParserType方法
+    
+    ---
+    tags:
+      - PowerRAG Proxy
+    security:
+      - ApiKeyAuth: []
+    """
+    return await _forward_request("POST", "/split/file/upload", tenant_id)
 

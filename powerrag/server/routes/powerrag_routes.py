@@ -1187,11 +1187,13 @@ async def parse_to_md_upload(tenant_id):
                     "message": f"Request timeout while downloading file from URL. Please try again or increase timeout."
                 }), 408
             except requests.exceptions.ConnectionError as e:
+                # ConnectionError: DNS failure, invalid URL, network unreachable, connection refused.
+                # 502 (Bad Gateway) indicates we could not reach the upstream URL.
                 logger.error(f"Connection error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
-                    "code": 503,
-                    "message": f"Failed to connect to file URL. Please check the URL and try again."
-                }), 503
+                    "code": 502,
+                    "message": f"Failed to download file from URL: {str(e)}"
+                }), 502
             except requests.exceptions.HTTPError as e:
                 logger.error(f"HTTP error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
@@ -1199,11 +1201,12 @@ async def parse_to_md_upload(tenant_id):
                     "message": f"HTTP error while downloading file: {str(e)}"
                 }), 502
             except requests.exceptions.RequestException as e:
+                # Catch-all for other request errors (e.g. TooManyRedirects)
                 logger.error(f"Request error downloading file from URL: {file_url}. Error: {e}")
                 return jsonify({
-                    "code": 400,
+                    "code": 502,
                     "message": f"Failed to download file from URL: {str(e)}"
-                }), 400
+                }), 502
             except Exception as e:
                 logger.error(f"Unexpected error downloading file from URL: {file_url}. Error: {e}", exc_info=True)
                 return jsonify({
@@ -1396,6 +1399,213 @@ async def split_text(tenant_id):
         
     except Exception as e:
         logger.error(f"Split text error: {e}", exc_info=True)
+        return jsonify({
+            "code": 500,
+            "message": str(e)
+        }), 500
+
+
+@powerrag_bp.route("/split/file", methods=["POST"])
+@apikey_required
+async def split_file(tenant_id):
+    """
+    Split file into chunks using rag/app chunking methods
+
+    Supports all ParserType methods: naive, qa, book, laws, paper, manual,
+    presentation, table, resume, picture, one, audio, email, tag, knowledge_graph,
+    title, regex, smart.
+
+    Request JSON:
+    {
+        "file_path": "/path/to/document.pdf",  # or use file_url
+        "file_url": "https://example.com/doc.pdf",  # optional
+        "parser_id": "naive",
+        "config": {
+            "chunk_token_num": 512,
+            "delimiter": "\n。.；;！!？？",
+            "lang": "Chinese",
+            "from_page": 0,
+            "to_page": 100000
+        }
+    }
+    
+    Response:
+    {
+        "code": 0,
+        "data": {
+            "parser_id": "naive",
+            "chunks": ["chunk1", "chunk2", ...],
+            "total_chunks": 10,
+            "filename": "document.pdf"
+        }
+    }
+    """
+    try:
+        data = await request.get_json()
+        
+        if not data:
+            return jsonify({
+                "code": 400,
+                "message": "No JSON data provided"
+            }), 400
+        
+        file_path = data.get("file_path")
+        file_url = data.get("file_url")
+        parser_id = data.get("parser_id", "naive")
+        config = data.get("config", {})
+        
+        if not file_path and not file_url:
+            return jsonify({
+                "code": 400,
+                "message": "Either file_path or file_url is required"
+            }), 400
+        
+        # Handle file URL download
+        if file_url:
+            max_file_size = config.get('max_file_size', settings.DOC_MAXIMUM_SIZE)
+            download_timeout = config.get('download_timeout', DEFAULT_DOWNLOAD_TIMEOUT)
+            head_timeout = config.get('head_request_timeout', DEFAULT_HEAD_REQUEST_TIMEOUT)
+            
+            logger.info(f"Downloading file from URL: {file_url}")
+            try:
+                binary, error_msg = download_file_with_validation(
+                    file_url, max_file_size, download_timeout, head_timeout
+                )
+                if error_msg:
+                    return jsonify({
+                        "code": 400,
+                        "message": f"Failed to download file: {error_msg}"
+                    }), 400
+                
+                # Extract filename from URL or use provided filename
+                filename = config.get('filename') or file_url.split('/')[-1].split('?')[0]
+                if not filename:
+                    filename = "downloaded_file"
+            except Exception as e:
+                logger.error(f"Error downloading file from URL: {e}", exc_info=True)
+                return jsonify({
+                    "code": 500,
+                    "message": f"Failed to download file: {str(e)}"
+                }), 500
+        else:
+            # Use file path
+            filename = file_path
+            binary = None
+        
+        service = PowerRAGSplitService()
+        result = service.split_file(
+            filename=filename,
+            binary=binary,
+            parser_id=parser_id,
+            config=config,
+            tenant_id=tenant_id,
+        )
+
+        return jsonify({
+            "code": 0,
+            "data": result,
+            "message": "success"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Split file error: {e}", exc_info=True)
+        return jsonify({
+            "code": 500,
+            "message": str(e)
+        }), 500
+
+
+@powerrag_bp.route("/split/file/upload", methods=["POST"])
+@apikey_required
+async def split_file_upload(tenant_id):
+    """
+    Split uploaded file into chunks using rag/app chunking methods
+
+    Supports all ParserType methods: naive, qa, book, laws, paper, manual,
+    presentation, table, resume, picture, one, audio, email, tag, knowledge_graph,
+    title, regex, smart.
+
+    Request (multipart/form-data):
+    - file: File to split (required)
+    - parser_id: Parser ID (optional, default: "naive")
+    - config: JSON string of parser config (optional)
+    
+    Config parameters:
+    - chunk_token_num (int): Target chunk size in tokens (default: 512)
+    - delimiter (str): Delimiter string for splitting (default: "\n。.；;！!？？")
+    - lang (str): Language (default: "Chinese")
+    - from_page (int): Start page number (default: 0)
+    - to_page (int): End page number (default: 100000)
+    
+    Response:
+    {
+        "code": 0,
+        "data": {
+            "parser_id": "naive",
+            "chunks": ["chunk1", "chunk2", ...],
+            "total_chunks": 10,
+            "filename": "document.pdf"
+        }
+    }
+    """
+    try:
+        # Check if file is present
+        files = await request.files
+        if 'file' not in files:
+            return jsonify({
+                "code": 400,
+                "message": "No file provided"
+            }), 400
+        
+        file = files['file']
+        if file.filename == '':
+            return jsonify({
+                "code": 400,
+                "message": "No file selected"
+            }), 400
+        
+        # Get parameters
+        form = await request.form
+        parser_id = form.get('parser_id', 'naive')
+        
+        # Parse config from JSON string if provided
+        import json
+        config_str = form.get('config', '{}')
+        try:
+            config = json.loads(config_str)
+        except json.JSONDecodeError:
+            return jsonify({
+                "code": 400,
+                "message": "Invalid JSON in config parameter"
+            }), 400
+        
+        filename = file.filename
+        
+        # Read file binary (file.read() is synchronous in Quart)
+        binary = file.read()
+        if not binary:
+            return jsonify({
+                "code": 400,
+                "message": "File is empty"
+            }), 400
+        
+        service = PowerRAGSplitService()
+        result = service.split_file(
+            filename=filename,
+            binary=binary,
+            parser_id=parser_id,
+            config=config,
+            tenant_id=tenant_id,
+        )
+
+        return jsonify({
+            "code": 0,
+            "data": result,
+            "message": "success"
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Split file upload error: {e}", exc_info=True)
         return jsonify({
             "code": 500,
             "message": str(e)

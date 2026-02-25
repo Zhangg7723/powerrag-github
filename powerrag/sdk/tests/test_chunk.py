@@ -156,8 +156,128 @@ class TestChunkSplitText:
         text = "This is a test document with multiple paragraphs."
         result = client.chunk.split_text(
             text=text,
-            parser_id="naive",
+            parser_id="regex",
             config={"chunk_token_num": 128}
         )
         assert "chunks" in result or "total_chunks" in result
+    
+    def test_split_text_unsupported_parser(self, client: PowerRAGClient):
+        """测试不支持的parser_id应该抛出错误"""
+        text = "Test text"
+        # 使用一个真正不支持的 parser_id（如 "paper"）
+        with pytest.raises(Exception) as exc_info:
+            client.chunk.split_text(
+                text=text,
+                parser_id="paper",  # paper 不支持纯文本切片，需要文件处理
+                config={"chunk_token_num": 128}
+            )
+        error_msg = str(exc_info.value).lower()
+        # PowerRAG: "not supported for text splitting" + "split_file"
+        # RAGFlow proxy: "unknown chunker" + "supported text chunkers"
+        assert (
+            ("not supported for text splitting" in error_msg and "split_file" in error_msg)
+            or ("unknown chunker" in error_msg and "paper" in error_msg)
+        )
+
+
+class TestChunkSplitFile:
+    """测试文件切片"""
+
+    def test_split_file_with_file_path(self, client: PowerRAGClient, test_file_path: str):
+        """测试使用 file_path 参数的文件切片（服务器需能访问该路径）"""
+        result = client.chunk.split_file(
+            file_path=test_file_path,
+            parser_id="naive",
+            config={"chunk_token_num": 512},
+        )
+        assert "chunks" in result
+        assert "total_chunks" in result
+        assert "filename" in result
+        assert isinstance(result["chunks"], list)
+        assert result["total_chunks"] >= 0
+
+    def test_split_file_with_file_url(self, client: PowerRAGClient):
+        """测试使用 file_url 参数的文件切片"""
+        # 使用 httpbin.org（HTTP 避免 SSL 证书问题，返回 HTML）
+        result = client.chunk.split_file(
+            file_url="http://httpbin.org/html",
+            parser_id="naive",
+            config={"chunk_token_num": 512, "filename": "example.html"},
+        )
+        assert "chunks" in result
+        assert "total_chunks" in result
+        assert "filename" in result
+        assert isinstance(result["chunks"], list)
+        assert result["total_chunks"] >= 0
+
+    def test_split_file_missing_both(self, client: PowerRAGClient):
+        """测试 file_path 和 file_url 都未提供时应抛出错误"""
+        with pytest.raises(ValueError) as exc_info:
+            client.chunk.split_file(parser_id="naive")
+        assert "file_path" in str(exc_info.value).lower() or "file_url" in str(exc_info.value).lower()
+        assert "must be provided" in str(exc_info.value).lower()
+
+    def test_split_file_invalid_url(self, client: PowerRAGClient):
+        """测试无效 URL 应抛出错误"""
+        with pytest.raises(Exception) as exc_info:
+            client.chunk.split_file(
+                file_url="http://invalid-domain-does-not-exist-12345.example.com/file.pdf",
+                parser_id="naive",
+                config={"download_timeout": 5},
+            )
+        error_msg = str(exc_info.value).lower()
+        assert "download" in error_msg or "failed" in error_msg or "connection" in error_msg
+
+    def test_split_file_size_limit_exceeded(self, client: PowerRAGClient):
+        """测试超过大小限制的 URL 应抛出错误"""
+        # httpbin.org/bytes/1000000 返回 1MB，max_file_size=1024 应触发限制
+        with pytest.raises(Exception) as exc_info:
+            client.chunk.split_file(
+                file_url="https://httpbin.org/bytes/1000000",
+                parser_id="naive",
+                config={"max_file_size": 1024},
+            )
+        error_msg = str(exc_info.value).lower()
+        assert "exceeds" in error_msg or "size" in error_msg or "limit" in error_msg
+
+    def test_split_file_upload(self, client: PowerRAGClient, test_file_path: str):
+        """测试上传文件并切片"""
+        result = client.chunk.split_file_upload(
+            file_path=test_file_path,
+            parser_id="naive",
+            config={"chunk_token_num": 512}
+        )
+        assert "chunks" in result
+        assert "total_chunks" in result
+        assert "filename" in result
+        assert isinstance(result["chunks"], list)
+        assert result["total_chunks"] >= 0
+    
+    def test_split_file_upload_with_different_parsers(self, client: PowerRAGClient, test_file_path: str):
+        """测试使用不同parser_id的文件切片"""
+        parsers = ["naive", "book", "title"]
+        for parser_id in parsers:
+            try:
+                result = client.chunk.split_file_upload(
+                    file_path=test_file_path,
+                    parser_id=parser_id,
+                    config={"chunk_token_num": 256}
+                )
+                assert "chunks" in result
+                assert result["total_chunks"] >= 0
+            except Exception as e:
+                # 某些parser可能不支持特定文件类型，这是正常的
+                if "not supported" not in str(e).lower():
+                    raise
+    
+    def test_split_file_upload_nonexistent_file(self, client: PowerRAGClient):
+        """测试不存在的文件应该抛出错误"""
+        with pytest.raises((FileNotFoundError, Exception)) as exc_info:
+            client.chunk.split_file_upload(
+                file_path="/nonexistent/file.pdf",
+                parser_id="naive"
+            )
+        # SDK raises FileNotFoundError locally; API may wrap in generic Exception
+        error_msg = str(exc_info.value).lower()
+        assert "not found" in error_msg or "no such file" in error_msg
 
