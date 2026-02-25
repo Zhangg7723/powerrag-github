@@ -24,7 +24,7 @@ from io import BytesIO
 import pdfplumber
 from typing import Union, Dict, TypedDict, Tuple, List, Optional
 from api.utils.configs import get_base_config
-from common.settings import STORAGE_IMPL
+from common import settings
 from openai import OpenAI
 from PIL import Image
 import io
@@ -413,7 +413,7 @@ class VllmParser:
                         img_bytes = buffered.getvalue()
                         
                         # Store image in storage (bucket)
-                        STORAGE_IMPL.put(output_dir, img_filename, img_bytes)
+                        settings.STORAGE_IMPL.put(output_dir, img_filename, img_bytes)
                         
                         # Use relative path so frontend treats it as same-origin (proxied to backend)
                         image_url = f"/v1/chunk/image/{output_dir}/{img_filename}"
@@ -658,7 +658,7 @@ class VllmParser:
                 img_bytes = base64.b64decode(img_base64)
 
                 # Store image in storage
-                STORAGE_IMPL.put(output_dir, img_name, img_bytes)
+                settings.STORAGE_IMPL.put(output_dir, img_name, img_bytes)
 
                 # Use relative path so frontend treats it as same-origin (proxied to backend).
                 # Avoids sanitizer blocking external img src while preventing data exfiltration.
