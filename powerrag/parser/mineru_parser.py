@@ -248,18 +248,10 @@ class MinerUPdfParser:
                 # Store image in OceanBase
                 STORAGE_IMPL.put(output_dir, img_name, img_bytes)
 
-                # Generate URL for the image using PowerRAG image access endpoint
-                # Get PowerRAG server configuration
-                powerrag_config = get_base_config("powerrag", {}) or {}
-                server_url = os.environ.get("PUBLIC_SERVER_URL", "http://localhost:6000")
-                
-                # Ensure server_url has protocol prefix
-                if not server_url.startswith("http://") and not server_url.startswith("https://"):
-                    server_url = f"http://{server_url}"
-                
-                # Construct the image URL using PowerRAG chunk image endpoint
+                # Use relative path so frontend treats it as same-origin (proxied to backend).
+                # Avoids sanitizer blocking external img src while preventing data exfiltration.
                 kb_id = output_dir.split('/')[0] if '/' in output_dir else output_dir
-                image_url = f"{server_url}/api/v1/powerrag/chunk/image/{kb_id}/{img_name}"
+                image_url = f"/api/v1/powerrag/chunk/image/{kb_id}/{img_name}"
 
                 # Add to result list
                 image_info.append((img_name, image_url))
