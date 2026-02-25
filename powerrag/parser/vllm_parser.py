@@ -415,10 +415,8 @@ class VllmParser:
                         # Store image in storage (bucket)
                         STORAGE_IMPL.put(output_dir, img_filename, img_bytes)
                         
-                        # Generate URL for the image
-                        powerrag_config = get_base_config("powerrag", {}) or {}
-                        api_url = os.environ.get("PUBLIC_SERVER_URL", "http://localhost:6000")
-                        image_url = f"http://{api_url}/v1/chunk/image/{output_dir}/{img_filename}"
+                        # Use relative path so frontend treats it as same-origin (proxied to backend)
+                        image_url = f"/v1/chunk/image/{output_dir}/{img_filename}"
                         
                         # Use HTML img tag with URL
                         text_items.append(f'<img src="{image_url}" alt="$$00$$" style="max-width: 60%; height: auto;">')
@@ -662,13 +660,9 @@ class VllmParser:
                 # Store image in storage
                 STORAGE_IMPL.put(output_dir, img_name, img_bytes)
 
-                # Generate URL for the image using RAGFlow image access endpoint
-                # Get RAGFlow server configuration
-                powerrag_config = get_base_config("powerrag", {}) or {}
-                api_url = os.environ.get("PUBLIC_SERVER_URL", "http://localhost:6000")
-
-                # Construct the image URL using the auth_image endpoint
-                image_url = f"http://{api_url}/v1/chunk/image/{output_dir}/{img_name}"
+                # Use relative path so frontend treats it as same-origin (proxied to backend).
+                # Avoids sanitizer blocking external img src while preventing data exfiltration.
+                image_url = f"/v1/chunk/image/{output_dir}/{img_name}"
 
                 # Add to result list
                 image_info.append((img_name, image_url))
