@@ -2,7 +2,7 @@ import Image from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 import { IReferenceChunk, IReferenceObject } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
-import DOMPurify from 'dompurify';
+import { sanitizeChatContent } from '@/utils/sanitize';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
 import SyntaxHighlighter from 'react-syntax-highlighter';
@@ -53,10 +53,7 @@ function MarkdownContent({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section'],
-      ADD_ATTR: ['class'],
-    });
+    let text = sanitizeChatContent(content);
     // let text = content;
     if (text === '') {
       text = t('chat.searching');
@@ -168,7 +165,7 @@ function MarkdownContent({
           <div className={'space-y-2 max-w-[40vw] w-full'}>
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+                __html: sanitizeChatContent(chunkItem?.content ?? ''),
               }}
               className={classNames(styles.chunkContentText, 'w-full')}
             ></div>

@@ -11,6 +11,7 @@ import {
 } from '@/hooks/knowledge-hooks';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { IReference } from '@/interfaces/database/chat';
+import { sanitizeChatContent } from '@/utils/sanitize';
 import {
   Button,
   Card,
@@ -30,7 +31,6 @@ import {
   Tooltip,
 } from 'antd';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import { isEmpty } from 'lodash';
 import { CircleStop, SendHorizontal } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -190,7 +190,7 @@ const SearchPage = () => {
                                   >
                                     <div
                                       dangerouslySetInnerHTML={{
-                                        __html: DOMPurify.sanitize(
+                                        __html: sanitizeChatContent(
                                           `${item.highlight}...`,
                                         ),
                                       }}
