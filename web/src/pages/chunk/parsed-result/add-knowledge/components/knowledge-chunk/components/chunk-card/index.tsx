@@ -10,9 +10,9 @@ import {
 } from '@/components/ui/tooltip';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/knowledge';
 import { cn } from '@/lib/utils';
+import { sanitizeChatContent } from '@/utils/sanitize';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
@@ -124,7 +124,7 @@ const ChunkCard = ({
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(item.content_with_weight),
+              __html: sanitizeChatContent(item.content_with_weight),
             }}
             className={classNames(styles.contentText, {
               [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,

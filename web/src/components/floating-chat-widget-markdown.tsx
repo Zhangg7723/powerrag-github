@@ -14,10 +14,10 @@ import {
   showImage,
 } from '@/utils/chat';
 import { getExtension } from '@/utils/document-util';
+import { sanitizeChatContent } from '@/utils/sanitize';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { Button, Flex, Popover, Tooltip } from 'antd';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
 import { pipe } from 'lodash/fp';
@@ -57,7 +57,8 @@ const FloatingChatWidgetMarkdown = ({
   const isDarkTheme = useIsDarkTheme();
 
   const contentWithCursor = useMemo(() => {
-    let text = content === '' ? t('chat.searching') : content;
+    let text =
+      content === '' ? t('chat.searching') : sanitizeChatContent(content);
     const nextText = replaceTextByOldReg(text);
     return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
   }, [content, t]);
@@ -179,7 +180,7 @@ const FloatingChatWidgetMarkdown = ({
           <div className="space-y-2 flex-1 min-w-0">
             <div
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(chunkItem?.content ?? ''),
+                __html: sanitizeChatContent(chunkItem?.content ?? ''),
               }}
               className="max-h-[250px] overflow-y-auto text-xs leading-relaxed p-2 bg-gray-50 dark:bg-gray-800 rounded prose-sm"
             ></div>

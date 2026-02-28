@@ -153,7 +153,10 @@ PowerRAG 作为独立的后端服务运行：
 
 ## 开发手册
 
-> **TODO**: 开发手册内容待补充
+对于想要从源码构建和运行 PowerRAG 的开发者：
+
+- **[开发者部署手册](docs/developer-setup-guide-zh.md)**: 从源码部署 PowerRAG 的完整指南
+
 
 ---
 

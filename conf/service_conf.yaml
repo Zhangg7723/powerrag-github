@@ -5,11 +5,11 @@ admin:
   host: 0.0.0.0
   http_port: 9381
 mysql:
-  name: 'rag_flow'
+  name: 'powerrag'
   user: 'root'
-  password: 'infini_rag_flow'
-  host: 'localhost'
-  port: 5455
+  password: 'powerrag'
+  host: '127.0.0.1'
+  port: 2881
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
@@ -31,12 +31,12 @@ infinity:
   uri: 'localhost:23817'
   db_name: 'default_db'
 oceanbase:
-  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  scheme: 'mysql'
   config:
-    db_name: 'test'
-    user: 'root@ragflow'
-    password: 'infini_rag_flow'
-    host: 'localhost'
+    db_name: 'powerrag_doc'
+    user: 'root'
+    password: 'powerrag'
+    host: '127.0.0.1'
     port: 2881
 redis:
   db: 1
@@ -53,8 +53,12 @@ redis:
 #   # 如果不配置此项，将自动降级到本地 mineru CLI（需要通过 pip install -U 'mineru[core]' 安装）
 # dots_ocr:
 #   vllm_url: 'http://localhost:8020'
+opendal:
+  scheme: 'mysql'
+  config:
+    oss_table: 'opendal_storage'
 task_executor:
-  message_queue_type: 'redis'
+  message_queue_type: 'oceanbase'
 user_default_llm:
   default_models:
     embedding_model:

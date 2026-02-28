@@ -872,6 +872,7 @@ General：实体和关系提取提示来自 GitHub - microsoft/graphrag：基于
       asanaDescription: '连接 Asana，同步工作区中的文件。',
       imapDescription:
         '连接你的 IMAP 邮箱，同步指定mailboxes中的邮件，用于知识检索与分析',
+      aliding_kbDescription: '连接阿里钉知识库以导入文档。',
       r2Description: '连接你的 Cloudflare R2 存储桶以导入和同步文件。',
       dropboxAccessTokenTip:
         '请在 Dropbox App Console 生成 Access Token，并勾选 files.metadata.read、files.content.read、sharing.read 等必要权限。',

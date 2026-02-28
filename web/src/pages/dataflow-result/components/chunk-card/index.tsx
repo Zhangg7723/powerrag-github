@@ -9,9 +9,9 @@ import {
 } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { IChunk } from '@/interfaces/database/knowledge';
+import { sanitizeChatContent } from '@/utils/sanitize';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
-import DOMPurify from 'dompurify';
 import { useEffect, useState } from 'react';
 import { ChunkTextMode } from '../../constant';
 import styles from './index.less';
@@ -104,7 +104,7 @@ const ChunkCard = ({
         >
           <div
             dangerouslySetInnerHTML={{
-              __html: DOMPurify.sanitize(item.content_with_weight),
+              __html: sanitizeChatContent(item.content_with_weight),
             }}
             className={classNames(styles.contentText, {
               [styles.contentEllipsis]: textMode === ChunkTextMode.Ellipse,

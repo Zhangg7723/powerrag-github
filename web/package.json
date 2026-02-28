@@ -5,7 +5,7 @@
     "build": "umi build",
     "build-storybook": "storybook build",
     "dev": "cross-env UMI_DEV_SERVER_COMPRESS=none umi dev",
-    "postinstall": "umi setup",
+    "postinstall": "umi setup && node scripts/fix-tailwindcss-plugin.js",
     "lint": "umi lint --eslint-only",
     "prepare": "cd .. && husky web/.husky",
     "setup": "umi setup",

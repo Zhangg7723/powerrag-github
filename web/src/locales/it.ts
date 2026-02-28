@@ -700,6 +700,8 @@ Quanto sopra è il contenuto che devi riassumere.`,
       avatar: 'Avatar',
       avatarTip: 'Questo sarà visualizzato sul tuo profilo.',
       profileDescription: 'Aggiorna la tua foto e i dettagli personali qui.',
+      aliding_kbDescription:
+        'Collega la tua knowledge base AliDing per importare documenti.',
       maxTokens: 'Token massimi',
       maxTokensMessage: 'Token massimi richiesti',
       maxTokensTip: `Questo imposta la lunghezza massima dell'output del modello, misurata in numero di token. Il valore predefinito è 512.`,

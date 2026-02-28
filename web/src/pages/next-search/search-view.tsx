@@ -14,7 +14,7 @@ import {
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { IReference } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
-import DOMPurify from 'dompurify';
+import { sanitizeChatContent } from '@/utils/sanitize';
 import { isEmpty } from 'lodash';
 import { BrainCircuit, Search, X } from 'lucide-react';
 import { Dispatch, SetStateAction, useEffect, useState } from 'react';
@@ -208,7 +208,7 @@ export default function SearchingView({
                               <PopoverTrigger asChild>
                                 <div
                                   dangerouslySetInnerHTML={{
-                                    __html: DOMPurify.sanitize(
+                                    __html: sanitizeChatContent(
                                       `${
                                         chunk.highlight ??
                                         chunk.content_with_weight ??
